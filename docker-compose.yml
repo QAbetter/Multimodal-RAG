@@ -1,0 +1,22 @@
+services:
+  book-rag:
+    build: .
+    image: book-rag:latest
+    container_name: book-rag
+    ports:
+      - "8000:8000"
+    volumes:
+      # 数据持久化：重启容器不丢索引和图片
+      - ./data:/app/data
+      # 配置文件挂载（API Key 等敏感信息不入镜像）
+      - ./.env:/app/.env:ro
+    environment:
+      # Chinese-CLIP 模型从国内镜像下载，避免连不上 huggingface.co
+      - HF_ENDPOINT=https://hf-mirror.com
+      - HF_HUB_DISABLE_XET=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

@@ -1,0 +1,53 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
+ENV/
+
+# ===== 环境变量（含明文 API Key，禁止提交） =====
+.env
+.env.*
+!.env.example
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===== 数据与模型缓存（体积大，不应入库） =====
+data/chroma/
+data/images/thumbnails/
+data/processed/images.json
+data/processed/tag_index.json
+dataset/
+# PDF 原始文件（体积大，不入库；放专用目录 data/pdf/）
+data/pdf/*.pdf
+# PDF 解析临时目录（智谱API返回的ZIP解压内容 + 切分临时文件）
+data/images/.pdf_extract_tmp/
+data/images/.pdf_split_tmp/
+data/images/.pdf_uploads/
+# 提取的PDF图片（已索引，可从智谱API重新提取）
+data/images/raw/pdf/
+
+# ===== HuggingFace 模型缓存 =====
+.cache/
+*.bin
+*.safetensors
+
+# ===== 日志与临时文件 =====
+*.log
+logs/
+*.tmp

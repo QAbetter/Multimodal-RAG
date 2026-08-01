@@ -1,0 +1,143 @@
+# ============================================================
+# 图片 RAG 评测集（基于 images.json 实际数据生成）
+# 共 56 张已索引图片（status=ready）
+# 数据来源：李白纪念馆文物
+# ============================================================
+
+# ============================================================
+# 一、text 模式（文本搜图）- 每张图用产品名作为 query
+# ============================================================
+
+{"mode": "text", "query": "台式电脑", "expected_image_ids": ["47f29a758ec191c2"]}
+
+{"mode": "text", "query": "1933年川陕省苏维埃政府工农银行叁串布币", "expected_image_ids": ["b17eb023b88212b1"]}
+{"mode": "text", "query": "川陕省苏维埃布币", "expected_image_ids": ["b17eb023b88212b1", "324499a47b9cf7b0", "1395b41db7f98153", "0215abbfdb0de289", "e12d6d4a83479511", "bee671c8cdec7c2f", "4365ecd748326fa3", "07ba2d5ad62859ba", "c3f730e4e1a87e5a", "48c04e4cd16337fa", "498c288e4f950359", "85bb7f7e8fabc9f6", "ed05e32705345d49", "a65f6b52fd2689bc", "71844e72739691b7", "ab70c28743b0e996", "755a6c2f10718c74", "6da89bc9cf2ee3b6", "10fc689556c2a442", "e272b54803d4f587"]}
+
+{"mode": "text", "query": "1987年烤制范曾李白像瓷盘", "expected_image_ids": ["1f3663e6971e68c5"]}
+{"mode": "text", "query": "洪宪年制粉彩人物瓷瓶", "expected_image_ids": ["f52f9108a1059c9a"]}
+{"mode": "text", "query": "周生顺制粉彩瓷罐", "expected_image_ids": ["fa50a8ab00efbae2"]}
+{"mode": "text", "query": "朱砂瓷瓶", "expected_image_ids": ["4e1af2349e45fc9b"]}
+{"mode": "text", "query": "李白与书童瓷像", "expected_image_ids": ["515aa3a16b35897f"]}
+{"mode": "text", "query": "李白醉卧瓷像", "expected_image_ids": ["2a5754596aa61b28"]}
+{"mode": "text", "query": "玉石雕佛像", "expected_image_ids": ["05861ff988302612"]}
+{"mode": "text", "query": "玉石雕李白卧像", "expected_image_ids": ["a9ccbb76ca41e69a"]}
+{"mode": "text", "query": "粉彩人物瓷笔洗", "expected_image_ids": ["5c0c934c75cf7dbd"]}
+{"mode": "text", "query": "粉彩李青莲瓷粉盒", "expected_image_ids": ["b3abfea3d7123d16"]}
+
+{"mode": "text", "query": "匡山书院字碑", "expected_image_ids": ["b400d268f38880d6"]}
+{"mode": "text", "query": "匡山书院章程并序碑", "expected_image_ids": ["a1719acaf361eced"]}
+{"mode": "text", "query": "匡山太白像碑", "expected_image_ids": ["23e8d4c704df4d9e"]}
+{"mode": "text", "query": "唐李先生彰明县旧宅碑并序", "expected_image_ids": ["a30a3d209e2d284a"]}
+{"mode": "text", "query": "大小匡山图志碑", "expected_image_ids": ["9bef33e94e29ed1c"]}
+{"mode": "text", "query": "扇面", "expected_image_ids": ["d118ab6c8da1b919"]}
+{"mode": "text", "query": "敕赐中和大明寺住持记碑", "expected_image_ids": ["4ff06aee14c1c002"]}
+{"mode": "text", "query": "新修匡山太白祠二十四韵并记碑", "expected_image_ids": ["42e0e06a864f899a"]}
+{"mode": "text", "query": "李榕游匡山诗碑", "expected_image_ids": ["d11de43dbee88efa"]}
+{"mode": "text", "query": "李白像碑", "expected_image_ids": ["e5c5a5fa4cdedc8e"]}
+{"mode": "text", "query": "民国李白醉卧瓷像", "expected_image_ids": ["c9cdfa0c95d1b25e"]}
+
+{"mode": "text", "query": "清圆腹平底瓷坛", "expected_image_ids": ["9ac6d61f37163a95"]}
+{"mode": "text", "query": "清大理石嵌面紫檀写字方桌", "expected_image_ids": ["6a8a8d0db3c183f7"]}
+{"mode": "text", "query": "清大理石嵌面紫檀雕花圆桌", "expected_image_ids": ["733ae1acd57ce714"]}
+{"mode": "text", "query": "清方木雕花茶几", "expected_image_ids": ["464b13953edc29db"]}
+{"mode": "text", "query": "清楠木雕花椅", "expected_image_ids": ["a53543dc5f9f0f52"]}
+{"mode": "text", "query": "清雕花圆木桌", "expected_image_ids": ["93cbc9be1abfce01"]}
+{"mode": "text", "query": "石牛", "expected_image_ids": ["7b767514fa9f4231"]}
+{"mode": "text", "query": "石狮", "expected_image_ids": ["87cc5daaa96e2c62"]}
+
+{"mode": "text", "query": "秋日同戴西岭游大匡山觅李太白读书台怀吊四首诗碑", "expected_image_ids": ["dbbfd1e4a35a5e7b"]}
+{"mode": "text", "query": "米元章书太白题江油尉厅诗碑", "expected_image_ids": ["7cd602e43ffde367"]}
+{"mode": "text", "query": "谪仙祠堂记碑", "expected_image_ids": ["9ee2f9e2515b974c"]}
+{"mode": "text", "query": "重修匡山中和大明寺记碑", "expected_image_ids": ["f6b85d42e7c3bd5d"]}
+{"mode": "text", "query": "钟骏声诗碑", "expected_image_ids": ["4fc5cdbf4bde5db2"]}
+{"mode": "text", "query": "龙安知府蒋德钧为保护匡山书院事告示碑", "expected_image_ids": ["6e1d627ee1f45516"]}
+
+# ============================================================
+# 二、text 模式 - 描述性查询（测试语义理解）
+# ============================================================
+
+{"mode": "text", "query": "电子产品", "expected_image_ids": ["47f29a758ec191c2"]}
+{"mode": "text", "query": "革命时期的纸币", "expected_image_ids": ["b17eb023b88212b1"]}
+{"mode": "text", "query": "李白形象的瓷器", "expected_image_ids": ["1f3663e6971e68c5", "515aa3a16b35897f", "2a5754596aa61b28", "c9cdfa0c95d1b25e"]}
+{"mode": "text", "query": "粉彩瓷器", "expected_image_ids": ["f52f9108a1059c9a", "fa50a8ab00efbae2", "5c0c934c75cf7dbd", "b3abfea3d7123d16"]}
+{"mode": "text", "query": "佛教造像", "expected_image_ids": ["05861ff988302612"]}
+{"mode": "text", "query": "古代石碑", "expected_image_ids": ["b400d268f38880d6", "a1719acaf361eced", "23e8d4c704df4d9e", "a30a3d209e2d284a", "9bef33e94e29ed1c", "4ff06aee14c1c002", "42e0e06a864f899a", "d11de43dbee88efa", "e5c5a5fa4cdedc8e", "dbbfd1e4a35a5e7b", "7cd602e43ffde367", "9ee2f9e2515b974c", "f6b85d42e7c3bd5d", "4fc5cdbf4bde5db2", "6e1d627ee1f45516"]}
+{"mode": "text", "query": "书法作品", "expected_image_ids": ["d118ab6c8da1b919"]}
+{"mode": "text", "query": "清代家具", "expected_image_ids": ["6a8a8d0db3c183f7", "733ae1acd57ce714", "464b13953edc29db", "a53543dc5f9f0f52", "93cbc9be1abfce01"]}
+{"mode": "text", "query": "石雕动物", "expected_image_ids": ["7b767514fa9f4231", "87cc5daaa96e2c62"]}
+{"mode": "text", "query": "带盖的瓷器", "expected_image_ids": ["fa50a8ab00efbae2", "9ac6d61f37163a95"]}
+
+# ============================================================
+# 三、image 模式（以图搜图）- 基线测试，每张图搜自身
+# ============================================================
+
+{"mode": "image", "image_file": "raw/电脑.jpeg", "expected_image_ids": ["47f29a758ec191c2"]}
+{"mode": "image", "image_file": "raw/1933年川陕省苏维埃政府工农银行叁串布币.jpg", "expected_image_ids": ["b17eb023b88212b1"]}
+{"mode": "image", "image_file": "raw/1933年川陕省苏维埃政府工农银行叁串布币1.jpg", "expected_image_ids": ["324499a47b9cf7b0"]}
+{"mode": "image", "image_file": "raw/1987年烤制范曾《李白像》瓷盘.jpg", "expected_image_ids": ["1f3663e6971e68c5"]}
+{"mode": "image", "image_file": "raw/20世纪初“洪宪年制”粉彩人物瓷瓶.jpg", "expected_image_ids": ["f52f9108a1059c9a"]}
+{"mode": "image", "image_file": "raw/中华民国“周生顺制”粉彩瓷罐（带盖）.jpg", "expected_image_ids": ["fa50a8ab00efbae2"]}
+{"mode": "image", "image_file": "raw/中华民国朱砂瓷瓶.jpg", "expected_image_ids": ["4e1af2349e45fc9b"]}
+{"mode": "image", "image_file": "raw/中华民国李白与书童瓷像.jpg", "expected_image_ids": ["515aa3a16b35897f"]}
+{"mode": "image", "image_file": "raw/中华民国李白醉卧瓷像.jpg", "expected_image_ids": ["2a5754596aa61b28"]}
+{"mode": "image", "image_file": "raw/中华民国玉石雕佛像（残）.jpg", "expected_image_ids": ["05861ff988302612"]}
+{"mode": "image", "image_file": "raw/中华民国玉石雕李白卧像（带座）.jpg", "expected_image_ids": ["a9ccbb76ca41e69a"]}
+{"mode": "image", "image_file": "raw/中华民国粉彩人物瓷笔洗.jpg", "expected_image_ids": ["5c0c934c75cf7dbd"]}
+{"mode": "image", "image_file": "raw/中华民国粉彩李青莲瓷粉盒.jpg", "expected_image_ids": ["b3abfea3d7123d16"]}
+{"mode": "image", "image_file": "raw/匡山书院字碑.jpg", "expected_image_ids": ["b400d268f38880d6"]}
+{"mode": "image", "image_file": "raw/匡山书院章程并序碑.jpg", "expected_image_ids": ["a1719acaf361eced"]}
+{"mode": "image", "image_file": "raw/匡山太白像碑.jpg", "expected_image_ids": ["23e8d4c704df4d9e"]}
+{"mode": "image", "image_file": "raw/唐李先生彰明县旧宅碑并序.jpg", "expected_image_ids": ["a30a3d209e2d284a"]}
+{"mode": "image", "image_file": "raw/大小匡山图志碑.jpg", "expected_image_ids": ["9bef33e94e29ed1c"]}
+{"mode": "image", "image_file": "raw/扇面.jpg", "expected_image_ids": ["d118ab6c8da1b919"]}
+{"mode": "image", "image_file": "raw/敕赐中和大明寺住持记碑.jpg", "expected_image_ids": ["4ff06aee14c1c002"]}
+{"mode": "image", "image_file": "raw/新修匡山太白祠二十四韵并记碑.jpg", "expected_image_ids": ["42e0e06a864f899a"]}
+{"mode": "image", "image_file": "raw/李榕游匡山诗碑.jpg", "expected_image_ids": ["d11de43dbee88efa"]}
+{"mode": "image", "image_file": "raw/李白像碑.jpg", "expected_image_ids": ["e5c5a5fa4cdedc8e"]}
+{"mode": "image", "image_file": "raw/民国李白醉卧瓷像.jpg", "expected_image_ids": ["c9cdfa0c95d1b25e"]}
+{"mode": "image", "image_file": "raw/清圆腹平底瓷坛(带盖).jpg", "expected_image_ids": ["9ac6d61f37163a95"]}
+{"mode": "image", "image_file": "raw/清大理石嵌面紫檀写字方桌.jpg", "expected_image_ids": ["6a8a8d0db3c183f7"]}
+{"mode": "image", "image_file": "raw/清大理石嵌面紫檀雕花圆桌.jpg", "expected_image_ids": ["733ae1acd57ce714"]}
+{"mode": "image", "image_file": "raw/清方木雕花茶几.jpg", "expected_image_ids": ["464b13953edc29db"]}
+{"mode": "image", "image_file": "raw/清楠木雕花椅.jpg", "expected_image_ids": ["a53543dc5f9f0f52"]}
+{"mode": "image", "image_file": "raw/清雕花圆木桌.jpg", "expected_image_ids": ["93cbc9be1abfce01"]}
+{"mode": "image", "image_file": "raw/石牛.jpg", "expected_image_ids": ["7b767514fa9f4231"]}
+{"mode": "image", "image_file": "raw/石狮.jpg", "expected_image_ids": ["87cc5daaa96e2c62"]}
+
+# ============================================================
+# 四、hybrid 模式（混合检索）- 用图片实际已有的标签
+# ============================================================
+
+{"mode": "hybrid", "query": "电脑", "tags": ["台式电脑"], "expected_image_ids": ["47f29a758ec191c2"]}
+{"mode": "hybrid", "query": "革命文物", "tags": ["历史文物"], "expected_image_ids": ["b17eb023b88212b1"]}
+{"mode": "hybrid", "query": "瓷盘", "tags": ["陶瓷盘"], "expected_image_ids": ["1f3663e6971e68c5"]}
+{"mode": "hybrid", "query": "瓷瓶", "tags": ["陶瓷花瓶"], "expected_image_ids": ["f52f9108a1059c9a", "4e1af2349e45fc9b"]}
+{"mode": "hybrid", "query": "瓷罐", "tags": ["陶瓷"], "expected_image_ids": ["fa50a8ab00efbae2"]}
+{"mode": "hybrid", "query": "李白瓷像", "tags": ["陶瓷塑像"], "expected_image_ids": ["515aa3a16b35897f", "2a5754596aa61b28", "c9cdfa0c95d1b25e"]}
+{"mode": "hybrid", "query": "佛像", "tags": ["佛像雕塑"], "expected_image_ids": ["05861ff988302612"]}
+{"mode": "hybrid", "query": "石雕", "tags": ["石雕"], "expected_image_ids": ["a9ccbb76ca41e69a", "7b767514fa9f4231"]}
+{"mode": "hybrid", "query": "笔洗", "tags": ["陶瓷罐"], "expected_image_ids": ["5c0c934c75cf7dbd"]}
+{"mode": "hybrid", "query": "粉盒", "tags": ["陶瓷"], "expected_image_ids": ["b3abfea3d7123d16"]}
+{"mode": "hybrid", "query": "石碑", "tags": ["石碑"], "expected_image_ids": ["b400d268f38880d6", "a1719acaf361eced", "23e8d4c704df4d9e", "9bef33e94e29ed1c", "4ff06aee14c1c002", "e5c5a5fa4cdedc8e", "dbbfd1e4a35a5e7b", "f6b85d42e7c3bd5d", "4fc5cdbf4bde5db2"]}
+{"mode": "hybrid", "query": "书法扇面", "tags": ["书法扇面"], "expected_image_ids": ["d118ab6c8da1b919"]}
+{"mode": "hybrid", "query": "木桌", "tags": ["木质家具"], "expected_image_ids": ["6a8a8d0db3c183f7"]}
+{"mode": "hybrid", "query": "圆桌", "tags": ["实木家具"], "expected_image_ids": ["733ae1acd57ce714", "93cbc9be1abfce01"]}
+{"mode": "hybrid", "query": "茶几", "tags": ["实木家具"], "expected_image_ids": ["464b13953edc29db"]}
+{"mode": "hybrid", "query": "椅子", "tags": ["中式家具"], "expected_image_ids": ["a53543dc5f9f0f52"]}
+{"mode": "hybrid", "query": "石狮子", "tags": ["石狮子"], "expected_image_ids": ["87cc5daaa96e2c62"]}
+
+# ============================================================
+# 五、跨图查询（测试多图召回）
+# ============================================================
+
+{"mode": "text", "query": "陶瓷器", "expected_image_ids": ["1f3663e6971e68c5", "f52f9108a1059c9a", "fa50a8ab00efbae2", "4e1af2349e45fc9b", "515aa3a16b35897f", "2a5754596aa61b28", "5c0c934c75cf7dbd", "b3abfea3d7123d16", "c9cdfa0c95d1b25e", "9ac6d61f37163a95"]}
+{"mode": "text", "query": "李白相关文物", "expected_image_ids": ["1f3663e6971e68c5", "515aa3a16b35897f", "2a5754596aa61b28", "a9ccbb76ca41e69a", "c9cdfa0c95d1b25e", "e5c5a5fa4cdedc8e"]}
+{"mode": "text", "query": "纪念馆藏品", "expected_image_ids": ["b17eb023b88212b1", "324499a47b9cf7b0", "1395b41db7f98153", "4e1af2349e45fc9b", "2a5754596aa61b28", "c9cdfa0c95d1b25e"]}
+{"mode": "text", "query": "民国时期文物", "expected_image_ids": ["fa50a8ab00efbae2", "4e1af2349e45fc9b", "515aa3a16b35897f", "2a5754596aa61b28", "05861ff988302612", "a9ccbb76ca41e69a", "5c0c934c75cf7dbd", "b3abfea3d7123d16", "c9cdfa0c95d1b25e"]}
+{"mode": "text", "query": "雕花工艺品", "expected_image_ids": ["733ae1acd57ce714", "464b13953edc29db", "a53543dc5f9f0f52", "93cbc9be1abfce01"]}
+
+{"mode": "hybrid", "query": "白色瓷器", "tags": ["白色"], "expected_image_ids": ["1f3663e6971e68c5", "fa50a8ab00efbae2", "515aa3a16b35897f", "2a5754596aa61b28", "5c0c934c75cf7dbd", "b3abfea3d7123d16", "c9cdfa0c95d1b25e", "9ac6d61f37163a95"]}
+{"mode": "hybrid", "query": "传统风格文物", "tags": ["传统风格"], "expected_image_ids": ["1f3663e6971e68c5", "fa50a8ab00efbae2", "515aa3a16b35897f", "2a5754596aa61b28", "5c0c934c75cf7dbd", "b3abfea3d7123d16", "c9cdfa0c95d1b25e", "a53543dc5f9f0f52"]}
+{"mode": "hybrid", "query": "李白纪念馆文物", "tags": ["李白纪念馆"], "expected_image_ids": ["4e1af2349e45fc9b", "a1719acaf361eced", "23e8d4c704df4d9e", "a30a3d209e2d284a", "9bef33e94e29ed1c", "4ff06aee14c1c002", "e5c5a5fa4cdedc8e", "7b767514fa9f4231", "f6b85d42e7c3bd5d", "4fc5cdbf4bde5db2"]}
+{"mode": "hybrid", "query": "灰色石材", "tags": ["灰色"], "expected_image_ids": ["a1719acaf361eced", "9bef33e94e29ed1c", "e5c5a5fa4cdedc8e", "87cc5daaa96e2c62", "dbbfd1e4a35a5e7b", "f6b85d42e7c3bd5d", "4fc5cdbf4bde5db2", "6e1d627ee1f45516"]}
+{"mode": "hybrid", "query": "复古风格文物", "tags": ["复古风格"], "expected_image_ids": ["324499a47b9cf7b0", "0215abbfdb0de289", "e12d6d4a83479511", "bee671c8cdec7c2f", "c3f730e4e1a87e5a", "07ba2d5ad62859ba", "48c04e4cd16337fa", "e272b54803d4f587"]}

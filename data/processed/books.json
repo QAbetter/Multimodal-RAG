@@ -1,0 +1,13 @@
+{
+  "test": {
+    "book_id": "test",
+    "title": "测试书",
+    "author": null,
+    "format": "txt",
+    "source_path": "data/raw/test.txt",
+    "total_chapters": 1,
+    "status": "ready",
+    "created_at": "2026-07-22T04:39:50.565637",
+    "updated_at": "2026-07-22T04:39:50.565637"
+  }
+}

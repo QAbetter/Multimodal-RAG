@@ -1,0 +1,36 @@
+langchain>=0.3.0,<0.4.0
+langchain-openai>=0.2.0,<0.3.0
+langchain-anthropic>=0.2.0,<0.3.0
+langchain-chroma>=0.1.4,<0.2.0
+langchain-text-splitters>=0.3.0,<0.4.0
+langgraph>=0.2.0,<0.3.0
+chromadb>=0.5.5,<0.6.0
+pydantic>=2.8.0,<3.0.0
+pydantic-settings>=2.4.0,<3.0.0
+fastapi>=0.115.0,<0.116.0
+uvicorn[standard]>=0.30.0,<0.31.0
+pypdf>=4.3.0,<5.0.0
+ebooklib>=0.18,<0.19
+beautifulsoup4>=4.12.0,<5.0.0
+python-dotenv>=1.0.0,<2.0.0
+PyMySQL>=1.1.0,<1.2.0
+flashrank>=0.2.9,<0.3.0
+python-docx>=1.1.0,<1.2.0
+python-pptx>=1.0.0,<1.1.0
+rank-bm25>=0.2.2,<0.3.0
+jieba>=0.42.1,<0.43.0
+# RAGAS 评测（--ragas 模式需要，正常服务运行不依赖）
+ragas>=0.2.0,<0.3.0
+datasets>=2.20.0,<3.0.0
+# ===== 图片 RAG 依赖 =====
+# torch：Chinese-CLIP 推理框架（CPU 版即可，有 GPU 可装 CUDA 版）
+torch>=2.0.0
+# transformers：必须锁定 4.x，5.x 要求 tokenizers>=0.22 与 chromadb(<=0.20.3) 冲突
+transformers>=4.44.0,<4.47.0
+# Pillow：图片加载与预处理（EXIF 修正、缩放、缩略图）
+Pillow>=10.0.0
+# requests：调用智谱文件解析 API（PDF 插图提取）+ 下载解析结果 ZIP
+requests>=2.31.0
+# ===== 开发依赖 =====
+# pytest：单元测试框架
+pytest>=8.0.0
