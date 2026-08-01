@@ -100,9 +100,11 @@ def _build_record(
     title = result.product_id or result.image_id
 
     # image_url：拼绝对路径，让 RAGFlow 能访问图片
+    # retriever 返回的 image_url 是相对 file_path（如 raw/xxx.jpg），
+    # 静态文件服务挂载在 /images 下（见 main.py），完整路径为 /images/raw/xxx.jpg
     image_url = result.image_url
     if base_url and image_url and not image_url.startswith("http"):
-        image_url = f"{base_url.rstrip('/')}/{image_url.lstrip('/')}"
+        image_url = f"{base_url.rstrip('/')}/images/{image_url.lstrip('/')}"
 
     metadata: dict[str, Any] = {
         "image_id": result.image_id,
