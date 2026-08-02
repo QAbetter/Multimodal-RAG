@@ -33,6 +33,7 @@ import json
 import logging
 import re
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -698,11 +699,16 @@ def extract_images_from_pdf(
 
     流程：
     1. 判断是否需要切分（超体积/页数阈值）
-    2. 需要切分：按页拆分 → 逐个子PDF调 _extract_single_pdf → 合并结果 → 清理临时文件
+    2. 需要切分：按页拆分 → 并发调 _extract_single_pdf（pdf_concurrent_workers 线程）→ 合并结果 → 清理临时文件
     3. 无需切分：直接调 _extract_single_pdf
 
     pdf_stem 用于命名存储子目录，不传则用 PDF 文件名（去扩展名）。
     同名 PDF 重复提取会覆盖旧图片（相同文件名），适合重新解析场景。
+
+    并发说明：
+    - 切分后多个子PDF用 ThreadPoolExecutor 并发调用 MinerU API，大幅减少等待时间
+    - 并发数由 settings.pdf_concurrent_workers 控制（默认 2，建议≤3 避免触发限流）
+    - 单切片失败不影响其他切片（错误隔离）
 
     失败处理：
     - 整个 PDF 解析失败：抛异常（上层决定是否跳过）
@@ -717,18 +723,45 @@ def extract_images_from_pdf(
 
     # 判断是否需要切分
     if _should_split_pdf(pdf_path):
-        logger.info("PDF 较大，按页切分后分批解析: %s", stem)
+        logger.info("PDF 较大，按页切分后并发解析: %s（workers=%d）", stem, settings.pdf_concurrent_workers)
         parts = _split_pdf(pdf_path, stem)
         all_results: list[ExtractedImage] = []
-        for idx, part_path in enumerate(parts):
+        failed_parts: list[str] = []
+        max_workers = min(settings.pdf_concurrent_workers, len(parts))
+
+        def _process_part(args: tuple[int, Path]) -> tuple[int, list[ExtractedImage]]:
+            idx, part_path = args
             part_stem = f"{stem}_part{idx:03d}"
-            try:
-                results = _extract_single_pdf(str(part_path), part_stem, storage_root)
-                all_results.extend(results)
-            except Exception:
-                logger.exception("子PDF解析失败，跳过: %s", part_path)
+            return idx, _extract_single_pdf(str(part_path), part_stem, storage_root)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_process_part, (idx, part_path)): idx
+                for idx, part_path in enumerate(parts)
+            }
+            # 按完成顺序收集，但最终按 idx 排序保证图片顺序稳定
+            results_by_idx: dict[int, list[ExtractedImage]] = {}
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    idx, results = future.result()
+                    results_by_idx[idx] = results
+                    logger.info("切片 part%03d 解析完成: %d 张图片", idx, len(results))
+                except Exception:
+                    logger.exception("子PDF解析失败，跳过: %s", parts[idx])
+                    failed_parts.append(parts[idx].name)
+
+        # 按 idx 升序合并，保证图片顺序与 PDF 页码顺序一致
+        for idx in sorted(results_by_idx.keys()):
+            all_results.extend(results_by_idx[idx])
+
         _cleanup_split_tmp(stem)
-        logger.info("PDF 切分解析全部完成: %s，共 %d 张图片", stem, len(all_results))
+        if failed_parts:
+            logger.warning("失败的切片: %s", failed_parts)
+        logger.info(
+            "PDF 并发解析全部完成: %s，共 %d 张图片（失败 %d 切片）",
+            stem, len(all_results), len(failed_parts),
+        )
         return all_results
 
     # 无需切分，直接解析

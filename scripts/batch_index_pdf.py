@@ -112,7 +112,7 @@ def main() -> None:
     parser.add_argument("--dir", type=str, default=None, help="PDF 扫描目录（默认配置的 pdf_raw_dir: data/raw/pdf/）")
     parser.add_argument("--category", type=str, default=None, help="统一设置图片类别")
     parser.add_argument("--batch-size", type=int, default=32, help="CLIP 批量向量化的批大小")
-    parser.add_argument("--tag-workers", type=int, default=4, help="GLM-4V 标签提取并发数")
+    parser.add_argument("--tag-workers", type=int, default=8, help="GLM-4V 标签提取并发数（默认 8，限流可降到 4）")
     args = parser.parse_args()
 
     print("=" * 60)

@@ -248,7 +248,7 @@ def index_image(image_id: str) -> ImageMetadata:
 def batch_index_images(
     image_ids: list[str],
     batch_size: int = 32,
-    tag_workers: int = 4,
+    tag_workers: int = 8,
 ) -> list[ImageMetadata]:
     """批量索引图片（CLIP 批量向量化 + 标签并发提取）。
 
@@ -263,7 +263,7 @@ def batch_index_images(
 
     单张图片失败不影响同批其他图片，失败图片标记 FAILED。
 
-    tag_workers 建议：智谱 GLM-4V 有并发限制，4 并发较稳定，8 并发需测试。
+    tag_workers 建议：智谱 GLM-4V 并发默认 8（实测稳定）；若遇限流可降到 4。
 
     并发安全：注册表读-改-写用 registry_lock 保护；耗时操作（标签提取、CLIP 向量化）
     在锁外执行。每批次落盘前重新加载最新注册表并合并本批修改，避免覆盖其他线程的改动。

@@ -243,7 +243,7 @@ def check_index(pdf_path: str, query: str | None = None) -> bool:
             name_map[image.image_id] = img.image_name
             image_ids.append(image.image_id)
 
-    index_results = batch_index_images(image_ids, batch_size=32, tag_workers=2)
+    index_results = batch_index_images(image_ids, batch_size=32, tag_workers=8)
     success = sum(1 for r in index_results if r.status.value == "ready")
     print(f"  [✓] 索引完成: 成功 {success}/{len(index_results)}")
 

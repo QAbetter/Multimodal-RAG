@@ -1,8 +1,18 @@
 # 图片 RAG 系统技术文档
 
-> 版本：v1.0
-> 编写日期：2026-07-22
+> 版本：v2.0
+> 编写日期：2026-07-22（v1.0 设计稿）／2026-08-02（v2.0 实现稿）
 > 项目基线：基于现有 `book-rag-exe`（书籍 RAG）项目的工程化设计模式进行改造
+> 当前状态：**核心功能已实现并通过自测，已具备 RAGFlow 对接与 Docker 部署能力**
+
+---
+
+## 版本变更记录
+
+| 版本 | 日期 | 主要变更 |
+|------|------|---------|
+| v1.0 | 2026-07-22 | 初版设计稿：技术选型、模块设计、三周开发计划 |
+| v2.0 | 2026-08-02 | 实现稿：完成图片索引/检索核心闭环、PDF 插图提取、文博结构化元数据、结构化标签检索、RAGFlow 对接、Docker 部署、性能优化 |
 
 ---
 
@@ -17,18 +27,23 @@
 | 项目 | 说明 |
 |------|------|
 | **输入** | 图片（以图搜图） 或 文本 query（文本搜图） |
-| **输出** | 相关的产品图片 + 该图片的标签等信息（类别、标签、相似度分数、元数据等） |
-| **核心能力** | 多模态检索（图文互检）、产品图片管理、标签过滤 |
+| **输出** | 相关的产品图片 + 该图片的标签等信息（类别、标签、相似度分数、元数据、caption 等） |
+| **核心能力** | 多模态检索（图文互检）、产品图片管理、标签过滤、PDF 插图提取与图文关联、文博元数据结构化、RAGFlow 外部知识库对接 |
 
-### 1.3 三周开发计划
+### 1.3 开发阶段与完成情况
 
-| 阶段 | 时间 | 目标 | 交付物 |
-|------|------|------|--------|
-| 第一周 | 7.20 ~ 7.26 | 安装环境、撰写技术文档 | 技术文档 + 可运行的环境 |
-| 第二周 | 7.27 ~ 8.2 | 熟悉现有数据库、写代码接入 RAG 系统 | 图片 RAG 核心代码（索引 + 检索） |
-| 第三周 | 8.3 ~ 8.9 | 批量索引、部署 | 可用的图片 RAG 服务 |
+| 阶段 | 时间 | 目标 | 完成状态 |
+|------|------|------|---------|
+| 第一周 | 7.20 ~ 7.26 | 安装环境、撰写技术文档 | ✅ 完成 |
+| 第二周 | 7.27 ~ 8.2 | 熟悉现有数据库、写代码接入 RAG 系统 | ✅ 完成 |
+| 第三周 | 8.3 ~ 8.9 | 批量索引、部署 | ✅ 完成（含 RAGFlow 对接、Docker 部署） |
 
-> 若对任务和方案已非常清晰，可跳过第一周文档环节直接进入下一阶段。
+**实际交付超出原计划**：在原"图片索引+检索"基础上，额外完成了：
+- **PDF 插图提取**：通过 MinerU API 从 PDF 文档提取图片及其周边文本（caption），实现图文关联检索
+- **文博结构化元数据**：通过 GLM-4V 一次调用提取 11 个文博专业字段（朝代/材质/器型/工艺等）
+- **结构化标签检索**：基于规则的同义词归一化与 query 解析，让"唐代的青铜剑"能精确命中结构化标签
+- **RAGFlow 对接**：实现 Dify 外部知识库 API 规范，作为 RAGFlow 的检索后端
+- **Docker 容器化部署**：提供 Dockerfile + docker-compose 一键部署能力
 
 ---
 
@@ -89,101 +104,163 @@ app/
 | 错误降级 | [rerank.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/rerank.py) | 标签提取失败降级为纯向量检索 |
 | 并发优化 | [retriever.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/retriever.py) | 批量图片 embedding 并发处理 |
 | 缓存策略 | [query_cache.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/query_cache.py) | 标签提取结果缓存（LLM 调用昂贵） |
-| 多路融合（RRF） | [fusion.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/fusion.py) | CLIP 向量 + 标签文本 + 元数据多路融合 |
+| 多路融合（RRF） | [fusion.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/fusion.py) | CLIP 向量 + 标签文本 + caption BM25 多路融合 |
 | 适配器模式 | [hybrid_retriever.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/hybrid_retriever.py) | 统一多模态 retriever 接口 |
 | 状态机 | [indexer.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/indexer.py) | 图片索引状态机（PENDING→EXTRACTING→READY） |
 
-### 2.4 需要改造/新增的部分
+### 2.4 实际改造情况
 
-| 现有模块 | 图片 RAG 改造方向 |
-|---------|------------------|
-| `loader.py`（文本分块） | 新增 `image_loader.py`：图片加载、预处理、特征提取 |
-| `vectorstore.py`（文本 embedding） | 新增 `image_vectorstore.py`：CLIP 多模态 embedding |
-| `bm25_store.py`（文本关键词） | 新增 `tag_store.py`：标签倒排索引（基于产品标签做精确过滤） |
-| `rerank.py`（文本 cross-encoder） | 新增 `image_rerank.py`：跨模态 rerank（可选） |
-| `schemas.py`（BookMetadata） | 新增 `ImageMetadata` / `ImageSearchRequest` 等模型 |
-| `indexer.py`（书籍索引） | 新增 `image_indexer.py`：图片索引主流程 |
-| `retriever.py`（文本问答） | 新增 `image_retriever.py`：图片检索主流程 |
-| `api/chat.py`（问答接口） | 新增 `api/image.py`：图片搜索接口 |
+原计划新增的模块与实际实现对照：
 
-**建议**：不直接修改原书籍 RAG 代码，而是在同仓库内新增 `app/core/image_*.py` 与 `app/api/image.py`，保持书籍 RAG 与图片 RAG 解耦，便于独立维护与回归。
+| 计划模块 | 实际文件 | 状态 |
+|---------|---------|------|
+| `image_loader.py` | [image_loader.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_loader.py) | ✅ 实现（含 MD5 image_id 计算） |
+| `image_embedder.py` | [image_embedder.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_embedder.py) | ✅ 实现（含批量 embed_images） |
+| `image_vectorstore.py` | [image_vectorstore.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_vectorstore.py) | ✅ 实现（直接操作 chromadb 底层 collection） |
+| `tag_store.py` | [tag_store.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/tag_store.py) | ✅ 实现（持久化到 tag_index.json） |
+| `image_indexer.py` | [image_indexer.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_indexer.py) | ✅ 实现（含批量索引 batch_index_images） |
+| `image_retriever.py` | [image_retriever.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_retriever.py) | ✅ 实现（含三路 RRF 融合） |
+| `tag_extractor.py` | [tag_extractor.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/tag_extractor.py) | ✅ 实现（升级为文博元数据提取） |
+| `api/image.py` | [image.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/api/image.py) | ✅ 实现（含 PDF 索引接口） |
+| `image_schemas.py` | [image_schemas.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/models/image_schemas.py) | ✅ 实现（含 11 个文博字段） |
+| ——（计划外新增） | [image_bm25_store.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_bm25_store.py) | ✅ 新增（caption BM25 索引） |
+| ——（计划外新增） | [pdf_image_extractor.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/pdf_image_extractor.py) | ✅ 新增（MinerU PDF 解析） |
+| ——（计划外新增） | [cultural_relic_aliases.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/cultural_relic_aliases.py) | ✅ 新增（文博同义词表与 query 解析） |
+| ——（计划外新增） | [locks.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/locks.py) | ✅ 新增（文件锁，并发安全） |
+| ——（计划外新增） | [dify.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/api/dify.py) | ✅ 新增（RAGFlow 外部知识库适配层） |
+
+**设计原则落实**：未修改原书籍 RAG 代码，图片 RAG 与书籍 RAG 通过独立 collection（`images` vs `books`）和独立 API 路由（`/image` vs `/chat`）解耦，互不影响。
 
 ---
 
 ## 三、图片 RAG 系统总体设计
 
-### 3.1 系统架构图
+### 3.1 系统架构图（v2.0 实现版）
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         客户端 / 前端                              │
-│              （文本 query / 图片上传 / 过滤条件）                   │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ HTTP
-┌───────────────────────────▼─────────────────────────────────────┐
-│                     FastAPI (app/api/image.py)                   │
-│   POST /image/search   POST /image/index   GET /image/{id}       │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────────┐
-│                  语义路由 (router.py 复用扩展)                     │
-│     文本搜图 │ 以图搜图 │ 标签过滤 │ 多模态融合                    │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────────┐
-│                    多模态检索层 (image_retriever.py)              │
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │ CLIP 向量检索 │  │ 标签文本检索  │  │ 元数据过滤(category) │   │
-│  │ (图片+文本)   │  │ (BM25/精确)   │  │                      │   │
-│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘   │
-│         └──────────────────┴─────────────────────┘               │
-│                        │ RRF 融合                                │
-│                        ▼                                         │
-│              ┌──────────────────┐                                │
-│              │  跨模态 Rerank    │ (可选，第二期)                  │
-│              └──────────────────┘                                │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────────┐
-│                         存储层                                    │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │ Chroma 向量库 │  │ 图片元数据    │  │ 图片文件存储          │   │
-│  │ (CLIP 向量)   │  │ (JSON/MySQL) │  │ (本地磁盘/对象存储)    │   │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                    客户端 / RAGFlow / 前端                            │
+│         （文本 query / 图片上传 / PDF 上传 / 过滤条件）                │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │ HTTP
+┌──────────────────────────────▼──────────────────────────────────────┐
+│                       FastAPI 路由层                                  │
+│  POST /image/index       上传单张图片并索引                            │
+│  POST /image/batch_index 批量上传图片并索引                            │
+│  POST /image/pdf/extract 上传 PDF 仅提取图片（不索引）                 │
+│  POST /image/pdf/index   上传 PDF 提取图片并索引                       │
+│  POST /image/search      文本搜图 / 以图搜图 / 混合检索                 │
+│  GET  /image/stats       系统统计（图片数/向量数/标签数/caption 数）    │
+│  GET  /image/{id}        查询图片元数据                                │
+│  DELETE /image/{id}      删除图片（清理所有关联数据）                   │
+│  POST /api/v1/dify/retrieval  RAGFlow 外部知识库检索入口              │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────────────┐
+│                   检索层 (image_retriever.py)                         │
+│                                                                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐          │
+│  │ CLIP 向量召回 │  │ 标签倒排召回  │  │ caption BM25 召回  │          │
+│  │ (语义相似)    │  │ (精确命中)    │  │ (文本关键词匹配)    │          │
+│  └──────┬───────┘  └──────┬───────┘  └─────────┬──────────┘          │
+│         └──────────────────┴─────────────────────┘                   │
+│                        │ RRF 融合（k=60）                             │
+│                        ▼                                            │
+│              结构化标签解析（cultural_relic_aliases.py）              │
+│              自然语言 query → ["朝代:唐","材质:青铜",...]             │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────────────┐
+│                          索引层                                       │
+│  ┌───────────────┐  ┌───────────────┐  ┌──────────────────────┐     │
+│  │ image_indexer │  │ tag_extractor │  │ pdf_image_extractor  │     │
+│  │ (状态机+批量)  │  │ (GLM-4V 文博) │  │ (MinerU API)         │     │
+│  └───────┬───────┘  └───────────────┘  └──────────────────────┘     │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────────────┐
+│                          存储层                                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐       │
+│  │ Chroma 向量库 │  │ JSON 注册表   │  │ 本地磁盘图片存储      │       │
+│  │ (images col) │  │ (images.json)│  │ (raw/ + thumbnails/) │       │
+│  └──────────────┘  └──────────────┘  └──────────────────────┘       │
+│  ┌──────────────┐  ┌──────────────┐                                  │
+│  │ tag_index.json│  │ caption BM25 │  （进程内内存索引）              │
+│  │ (标签倒排)    │  │              │                                  │
+│  └──────────────┘  └──────────────┘                                  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 3.2 核心流程
 
-#### 索引流程（写入）
+#### 索引流程（单张图片写入）
 
 ```
 图片文件
    │
    ▼
-[1] 图片预处理（缩放、归一化、EXIF 方向修正）
+[1] register_image：写入 images.json，status=PENDING
+   │   image_id = MD5(文件内容)[:16]（相同图片自动去重）
    │
    ▼
-[2] CLIP 图像 embedding（提取 512/768 维视觉向量）
+[2] extract_relic_metadata：GLM-4V 一次调用产出 11 个文博字段 + tags + caption
+   │   失败降级：返回空对象，索引继续走纯向量检索
    │
    ▼
-[3] 标签提取（GLM-4V 多模态 LLM 生成产品标签）──┐
-   │                                          │ 失败降级：只用向量，无标签
-   ▼                                          │
-[4] 标签文本 embedding（CLIP 文本编码器）        │
-   │                                          │
-   ▼                                          │
-[5] 构造 ImageMetadata（product_id/category/tags/...）
+[3] structured_fields_to_tags：把结构化字段转为 "命名空间:值" 标签
+   │   如 dynasty="唐" → "朝代:唐"，追加到 tags
    │
    ▼
-[6] 写入 Chroma（图像向量 + metadata payload）
+[4] load_and_preprocess：EXIF 修正 + RGB 转换 + 缩放到 224×224
    │
    ▼
-[7] 写入标签倒排索引（tag_store）+ 元数据注册表
+[5] embed_image：CLIP 图像 embedding（512 维，L2 归一化）
    │
    ▼
-[8] 状态机迁移：PENDING → EXTRACTING → READY
+[6] generate_thumbnail：生成 256×256 缩略图供前端展示
+   │
+   ▼
+[7] 写入 Chroma images collection（向量 + metadata payload）
+   │   重新索引前先 delete_image_vectors 清理旧向量
+   │
+   ▼
+[8] 写入 tag_store（标签倒排索引，持久化 tag_index.json）
+   │
+   ▼
+[9] 写入 image_bm25_store（caption BM25 索引，若有 caption）
+   │
+   ▼
+[10] status=READY，落盘 images.json
+```
+
+#### 索引流程（PDF 插图写入）
+
+```
+PDF 文件
+   │
+   ▼
+[1] 大文件切分：超 150MB 或 150 页按页拆分为子 PDF
+   │
+   ▼
+[2] 并发调 MinerU API（pdf_concurrent_workers 个线程）
+   │   每个子 PDF：上传 → 轮询 → 下载 ZIP
+   │
+   ▼
+[3] 解析 middle.json：建立 image_body ↔ image_footnote 配对
+   │   降级：无 JSON 时用 Markdown 前后行匹配
+   │
+   ▼
+[4] 提取图片 + caption，复制到 data/images/raw/pdf/{stem}/
+   │
+   ▼
+[5] register_image：注册时带 caption / pdf_source / page_number
+   │
+   ▼
+[6] batch_index_images：批量 CLIP 向量化 + 并发 GLM-4V 标签提取
+   │   caption 保留 PDF 提取的原值，不被 GLM-4V 覆盖
+   │
+   ▼
+[7] 写入 Chroma + tag_store + caption BM25 索引
 ```
 
 #### 检索流程（查询）
@@ -192,27 +269,36 @@ app/
 用户输入（文本 query 或 图片）
    │
    ▼
-[1] 路由判定（文本搜图 / 以图搜图 / 标签过滤）
-   │
-   ├─ 文本 query ──→ CLIP 文本 embedding
-   ├─ 图片输入  ──→ CLIP 图像 embedding
-   └─ 标签过滤  ──→ 直接走 tag_store 精确匹配
+[1] 路由判定（search 函数统一入口）
+   ├─ 文本 query ──→ embed_text（CLIP 文本向量）
+   └─ 图片输入  ──→ embed_image（CLIP 图像向量）
    │
    ▼
-[2] 多路并发检索
-   ├─ 路A：CLIP 向量相似度检索（Chroma）
-   ├─ 路B：标签文本检索（如有标签信息）
-   └─ 路C：元数据过滤（category/product_id）
+[2] 结构化标签解析（仅文本搜图）
+   parse_structured_tags("唐代的青铜剑")
+   → ["朝代:唐", "材质:青铜", "二级分类:剑"]
    │
    ▼
-[3] RRF 融合（排名融合，避免不同模态分数量纲不一致）
+[3] 判定是否启用混合检索
+   ├─ 有 tags 或 caption 索引非空 → 启用三路混合检索
+   └─ 否则 → 纯向量检索
    │
    ▼
-[4] （可选）跨模态 Rerank 精排
+[4] 混合检索 _hybrid_retrieve（三路并发召回）
+   ├─ 路 A：CLIP 向量召回（top_k*2，语义相似）
+   ├─ 路 B：标签倒排召回（top_k*2，精确命中）
+   └─ 路 C：caption BM25 召回（top_k*2，文本匹配）
    │
    ▼
-[5] 截断 top_k，返回 ImageSearchResponse
-       └─ 每条结果含：image_url / tags / category / score / metadata
+[5] RRF 融合：每路按排名贡献 1/(k+rank+1)，k=60
+   │   按 image_id 累加 RRF 分数后降序排序
+   │
+   ▼
+[6] category 过滤 + 补充 metadata（非向量召回的 image_id 用 get_by_ids）
+   │
+   ▼
+[7] 截断 top_k，返回 ImageSearchResponse
+       └─ 每条结果含：image_url / tags / category / score / caption / pdf_source
 ```
 
 ---
@@ -223,7 +309,7 @@ app/
 
 | 候选模型 | 维度 | 中文支持 | 说明 |
 |---------|------|---------|------|
-| **Chinese-CLIP（推荐）** | 512/768 | 优秀 | 针对中文优化，产品图片场景（含中文标签/描述）效果更好 |
+| **Chinese-CLIP（已采用）** | 512 | 优秀 | 针对中文优化，产品图片场景（含中文标签/描述）效果更好 |
 | OpenAI CLIP | 512/768 | 一般 | 英文场景成熟，中文较弱 |
 | 智谱 embedding-3 | 1024 | 优秀 | 但仅支持文本，不支持图片，不适用于图文互检 |
 
@@ -231,24 +317,36 @@ app/
 1. 图片 RAG 需要**图文互检**（文本搜图 + 以图搜图），必须用支持双模态的模型
 2. 产品图片场景多为中文标签/描述，Chinese-CLIP 中文表现优于原版 CLIP
 3. 开源可本地部署，无 API 调用成本，适合批量索引
-4. 通过 HuggingFace transformers 可直接加载
-
-> 若显存充足（≥8GB），可升级到 `chinese-clip-vit-large-patch14`（768 维，精度更高）。
+4. 通过 HuggingFace transformers 可直接加载（docker-compose 已配置 `HF_ENDPOINT=https://hf-mirror.com` 国内镜像）
 
 ### 4.2 标签提取 LLM
 
 | 候选 | 说明 |
 |------|------|
-| **GLM-4V（推荐）** | 智谱多模态模型，支持图片理解，OpenAI 兼容协议，复用现有 API Key |
+| **GLM-4V（已采用）** | 智谱多模态模型，支持图片理解，OpenAI 兼容协议，复用现有 API Key |
 | GPT-4V | 效果好但成本高 |
 | Qwen-VL | 阿里多模态，开源可自部署 |
 
 **选型决策**：采用 **GLM-4V**，原因：
 1. 复用现有 `.env` 中的智谱 API Key 与 base_url，零额外配置
 2. 通过 OpenAI 兼容协议调用，与现有 `get_llm()` 模式一致
-3. 中文产品标签识别效果好
+3. 中文文物标签识别效果好
+4. **一次调用同时产出 11 个文博字段 + tags + caption**，避免多次调用浪费 token
 
-### 4.3 向量库
+### 4.3 PDF 解析服务
+
+| 候选 | 说明 |
+|------|------|
+| **MinerU API（已采用）** | 开源 PDF 解析服务，提供 middle.json 结构化结果，含图文配对 |
+| 智谱同步文件解析 | 仅返回 Markdown，需自行匹配图文 |
+| PyMuPDF 本地解析 | 无法获取图文对应关系 |
+
+**选型决策**：采用 **MinerU API**（`vlm` 模型版本），原因：
+1. `middle.json` 的 `para_blocks` 已将 `image_body` 与 `image_footnote` 配对在同一 block 内，无需坐标匹配
+2. 支持 VLM 模型版本，对扫描件和复杂版式解析精度更高
+3. 提供异步批量接口，支持大文件切分后并发解析
+
+### 4.4 向量库
 
 **复用 Chroma**，原因：
 1. 已在项目中验证可用，无需引入新依赖
@@ -256,588 +354,797 @@ app/
 3. 支持 metadata 过滤（按 category/product_id 过滤）
 4. 新建独立 collection（`images`），与书籍 collection（`books`）隔离
 
-### 4.4 图片存储
+**实现细节**：图片 RAG 直接操作 chromadb 底层 collection（`collection.add(embeddings=...)`），而非 LangChain 的 `Chroma` 封装，因为 CLIP 向量是本地预计算的，需绕过 LangChain 的 `embedding_function`（它期望文本输入）。
+
+### 4.5 图片存储
 
 | 方案 | 适用场景 | 选型 |
 |------|---------|------|
-| 本地磁盘 + 路径引用 | 小规模（<10万张） | **第一期采用** |
-| 对象存储（MinIO/OSS） | 大规模 + 高并发 | 第三期可选升级 |
+| 本地磁盘 + 路径引用 | 小规模（<10万张） | **已采用** |
+| 对象存储（MinIO/OSS） | 大规模 + 高并发 | 未来可选升级 |
 
-**选型决策**：第一期采用**本地磁盘存储**，路径写入 metadata，理由：简单、零依赖，第三周部署时若规模增长再升级。
+**选型决策**：采用**本地磁盘存储**，路径写入 metadata，通过 FastAPI `StaticFiles` 挂载到 `/images` 路径对外提供访问。理由：简单、零依赖，Docker 部署时通过 volume 挂载持久化。
 
-### 4.5 技术栈总览
+### 4.6 技术栈总览
 
 | 组件 | 选型 | 复用/新增 |
 |------|------|----------|
 | 多模态 Embedding | Chinese-CLIP | 新增 |
 | 标签提取 LLM | GLM-4V（智谱） | 新增（复用 API Key） |
+| PDF 解析 | MinerU API | 新增 |
 | 向量库 | Chroma | 复用 |
+| 关键词检索 | rank-bm25 + jieba | 复用（新增 caption BM25） |
 | Web 框架 | FastAPI | 复用 |
 | 图片处理 | Pillow | 已在 .venv |
 | 深度学习 | PyTorch + transformers | 新增 |
 | 配置管理 | pydantic-settings | 复用 |
+| 容器化 | Docker + docker-compose | 新增 |
+| 外部知识库对接 | Dify API 规范 | 新增 |
 
 ---
 
 ## 五、模块设计
 
-### 5.1 目录结构（建议）
-
-在现有项目结构上新增图片 RAG 相关模块，保持与书籍 RAG 解耦：
+### 5.1 实际目录结构
 
 ```
 app/
 ├── api/
 │   ├── chat.py              # 原有书籍问答接口
-│   └── image.py             # 【新增】图片搜索接口
+│   ├── image.py             # 【新增】图片索引与搜索接口（含 PDF 索引）
+│   └── dify.py              # 【新增】RAGFlow/Dify 外部知识库适配层
 ├── core/
 │   ├── ...                  # 原有书籍 RAG 模块
-│   ├── image_config.py      # 【新增】图片 RAG 配置（可合并到 config.py）
-│   ├── image_loader.py      # 【新增】图片加载与预处理
-│   ├── image_embedder.py    # 【新增】CLIP 多模态 embedding
-│   ├── image_vectorstore.py # 【新增】图片向量库封装
-│   ├── tag_store.py         # 【新增】标签倒排索引
-│   ├── image_indexer.py     # 【新增】图片索引主流程
-│   ├── image_retriever.py   # 【新增】图片检索主流程
-│   ├── image_fusion.py      # 【新增】多模态 RRF 融合
-│   └── tag_extractor.py     # 【新增】GLM-4V 标签提取
+│   ├── config.py            # 【扩展】新增图片 RAG + PDF + RAGFlow 配置
+│   ├── image_loader.py      # 【新增】图片加载与预处理（含 MD5 image_id）
+│   ├── image_embedder.py    # 【新增】CLIP 多模态 embedding（含批量）
+│   ├── image_vectorstore.py # 【新增】图片向量库封装（直接操作 chromadb）
+│   ├── tag_store.py         # 【新增】标签倒排索引（持久化 tag_index.json）
+│   ├── image_bm25_store.py  # 【新增】caption BM25 索引（进程内内存）
+│   ├── image_indexer.py     # 【新增】图片索引主流程（状态机+批量索引）
+│   ├── image_retriever.py   # 【新增】图片检索主流程（三路 RRF 融合）
+│   ├── tag_extractor.py     # 【新增】GLM-4V 文博元数据提取（11 字段）
+│   ├── pdf_image_extractor.py # 【新增】MinerU PDF 解析与图文提取
+│   ├── cultural_relic_aliases.py # 【新增】文博同义词表与 query 解析
+│   └── locks.py             # 【新增】文件锁（并发安全）
 └── models/
-    └── image_schemas.py     # 【新增】图片相关数据模型
+    └── image_schemas.py     # 【新增】图片数据模型（含 11 个文博字段）
 
 data/
-├── images/                  # 【新增】图片文件存储目录
-│   ├── raw/                 # 原始图片
-│   └── thumbnails/          # 缩略图
-├── chroma/                  # 向量库持久化（已有）
+├── images/                  # 图片文件存储目录
+│   ├── raw/                 # 原始图片（含 pdf/ 子目录存 PDF 提取的图片）
+│   └── thumbnails/          # 缩略图（以 image_id 命名）
+├── pdf/                     # PDF 原始文件专用目录
+├── chroma/                  # 向量库持久化（images + books 两个 collection）
 └── processed/
-    └── images.json          # 【新增】图片元数据注册表
+    ├── images.json          # 图片元数据注册表
+    └── tag_index.json       # 标签倒排索引
+
+scripts/
+├── batch_index_images.py    # 批量索引散落图片
+├── batch_index_pdf.py       # 批量索引 PDF
+├── verify_clip_env.py       # CLIP 环境验证
+├── verify_glm4v_tags.py     # GLM-4V 标签提取验证
+├── verify_image_rag.py      # 图片 RAG 闭环验证
+├── verify_pdf_extract.py    # PDF 提取验证
+└── run_image_eval.py        # 图片检索评测
+
+tests/
+├── test_image_indexer.py
+├── test_image_retriever.py
+├── test_tag_store.py
+├── test_pdf_image_extractor.py
+└── test_cultural_relic_aliases.py
+
+Dockerfile                   # Docker 镜像构建（多阶段构建）
+docker-compose.yml           # Docker 编排（含 HF 镜像配置）
+.env.example                 # 环境变量示例
+DEPLOY.md                    # 部署指南
 ```
 
 ### 5.2 配置层设计
 
-在 [config.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/config.py) 的 `Settings` 类中新增图片 RAG 相关配置：
+在 [config.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/config.py) 的 `Settings` 类中新增的图片 RAG 相关配置（已全部实现）：
 
 ```python
-# 图片 RAG 配置（新增到 Settings 类）
-# 多模态 embedding
+# ===== 图片 RAG 配置 =====
+# 多模态 Embedding（Chinese-CLIP，图文同一向量空间）
 clip_model: str = "OFA-Sys/chinese-clip-vit-base-patch16"
-clip_device: str = "cpu"  # 或 "cuda"，有 GPU 时改为 cuda
+clip_device: str = "cpu"  # 有 GPU 改为 cuda
 image_embedding_dim: int = 512
 
 # 图片存储
 image_storage_dir: str = "data/images"
-image_thumbnail_size: tuple = (224, 224)  # CLIP 输入尺寸
+image_thumbnail_size: int = 224  # CLIP 模型输入尺寸
 
-# 标签提取
-image_tag_llm_model: str = "glm-4v"  # 智谱多模态模型
-image_tag_max_count: int = 5  # 每张图最多提取 5 个标签
+# 标签提取 LLM（复用智谱 API Key，用多模态模型 glm-4v）
+image_tag_llm_model: str = "glm-4v"
+image_tag_max_count: int = 5
 
-# 图片向量库（独立 collection，与书籍隔离）
+# 图片向量库（独立 collection，与书籍 books 隔离）
 chroma_image_collection: str = "images"
 
 # 图片检索参数
 image_retrieval_top_k: int = 10
-image_score_threshold: float = 0.2  # 相似度低于此值视为低相关
+image_score_threshold: float = 0.2
+
+# ===== PDF 插图提取配置（MinerU 精准解析 API） =====
+mineru_api_base: str = "https://mineru.net/api/v4"
+mineru_token: str = ""
+mineru_model_version: str = "vlm"  # vlm 精度更高
+mineru_is_ocr: bool = False
+mineru_poll_interval: int = 5
+mineru_poll_timeout: int = 600
+pdf_image_subdir: str = "raw/pdf"
+image_caption_max_chars: int = 500
+mineru_download_timeout: int = 180
+pdf_split_size_mb: int = 150       # PDF 切分体积阈值
+pdf_split_page_threshold: int = 150  # PDF 切分页数阈值
+pdf_split_chunk_pages: int = 100   # 每个子 PDF 页数
+pdf_concurrent_workers: int = 2    # PDF 并发解析线程数（建议 2-3）
+
+# ===== RAGFlow / Dify 外部知识库对接 =====
+external_base_url: str = ""        # RAGFlow 回调本服务的基础 URL
+dify_api_key: str = ""             # 外部知识库 API Key
 ```
 
 ### 5.3 数据模型设计
 
-在 `app/models/image_schemas.py` 中定义：
+`ImageMetadata` 在原 v1.0 基础上扩展了 PDF 与文博字段，详见 [image_schemas.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/models/image_schemas.py)：
 
 ```python
-from datetime import datetime
-from enum import Enum
-from typing import Optional
-from pydantic import BaseModel, Field
-
-
-class ImageStatus(str, Enum):
-    PENDING = "pending"           # 已注册，尚未索引
-    EXTRACTING_TAGS = "extracting"  # 标签提取中
-    INDEXING = "indexing"         # 向量化中
-    READY = "ready"               # 可检索
-    FAILED = "failed"             # 索引失败
-
-
 class ImageMetadata(BaseModel):
     """单张产品图片的元数据。"""
-    image_id: str = Field(..., description="图片唯一标识，建议用文件名 hash")
-    product_id: str = Field(..., description="所属产品 id")
-    category: Optional[str] = Field(None, description="产品类别，如 clothing/electronics")
-    file_path: str = Field(..., description="图片在 data/images/raw 下的相对路径")
-    thumbnail_path: Optional[str] = Field(None, description="缩略图路径")
-    tags: list[str] = Field(default_factory=list, description="GLM-4V 提取的标签")
-    width: Optional[int] = None
-    height: Optional[int] = None
-    status: ImageStatus = ImageStatus.PENDING
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    # ===== 基础字段 =====
+    image_id: str           # MD5(文件内容)[:16]
+    product_id: str         # 所属产品 id
+    category: Optional[str] # 产品类别
+    file_path: str          # 相对 image_storage_dir 的路径
+    thumbnail_path: Optional[str]
+    tags: list[str]         # GLM-4V 提取的标签 + 结构化标签
+    width: Optional[int]
+    height: Optional[int]
+    status: ImageStatus     # PENDING → EXTRACTING → INDEXING → READY/FAILED
+    created_at: datetime
+    updated_at: datetime
 
-    def to_payload(self) -> dict:
-        """转换为向量库 payload，去掉 None 字段（Chroma 不接受 None）。"""
-        return {k: v for k, v in self.model_dump().items() if v is not None}
+    # ===== PDF 插图提取新增字段 =====
+    caption: Optional[str]      # 图片对应的文本（PDF周边段落/图注）
+    pdf_source: Optional[str]   # 来源 PDF 文件名
+    page_number: Optional[int]  # 所在 PDF 页码
 
-
-class ImageSearchRequest(BaseModel):
-    """图片搜索请求。"""
-    query: Optional[str] = Field(None, description="文本查询，与 image 二选一")
-    image_base64: Optional[str] = Field(None, description="图片 base64，用于以图搜图")
-    category: Optional[str] = Field(None, description="类别过滤")
-    tags: Optional[list[str]] = Field(None, description="标签过滤")
-    top_k: Optional[int] = Field(None, description="返回结果数，默认用配置")
-
-
-class ImageResult(BaseModel):
-    """单条图片搜索结果。"""
-    image_id: str
-    product_id: str
-    image_url: str
-    thumbnail_url: Optional[str]
-    tags: list[str]
-    category: Optional[str]
-    score: float = Field(..., description="相似度分数，0~1")
-
-
-class ImageSearchResponse(BaseModel):
-    """图片搜索响应。"""
-    results: list[ImageResult]
-    route: str = Field(..., description="text_to_image | image_to_image | tag_filter")
-    total: int
-    answer_quality: str = Field(default="ok", description="ok | low_confidence | no_result")
+    # ===== 文博藏品结构化字段（GLM-4V 一次调用同时产出） =====
+    caption_standard: Optional[str]   # 标准文物著录描述
+    caption_public: Optional[str]     # 大众科普通俗描述
+    category_top: Optional[str]       # 一级文物分类
+    category_sub: Optional[str]       # 二级具体器型
+    dynasty: Optional[str]            # 年代/朝代
+    material: Optional[str]           # 材质/质地
+    color_feature: Optional[str]      # 色彩/釉色/沁色
+    craft: Optional[str]              # 核心工艺
+    pattern_theme: list[str]          # 纹饰题材列表
+    function_usage: Optional[str]     # 原始功用
+    relic_condition: Optional[str]    # 完残状态
 ```
 
-### 5.4 核心模块代码骨架
-
-#### 5.4.1 图片加载与预处理（`image_loader.py`）
-
-```python
-"""图片加载与预处理：统一尺寸、EXIF 方向修正、缩略图生成。"""
-from pathlib import Path
-from PIL import Image, ImageOps
-from app.core.config import get_settings
-
-
-def load_and_preprocess(file_path: str) -> Image.Image:
-    """加载图片并预处理：EXIF 方向修正 + 转 RGB + 缩放到 CLIP 输入尺寸。"""
-    settings = get_settings()
-    img = Image.open(file_path)
-    img = ImageOps.exif_transpose(img)  # 修正手机拍摄方向
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    img = img.resize(settings.image_thumbnail_size)
-    return img
-
-
-def generate_thumbnail(file_path: str, thumb_dir: str) -> str:
-    """生成缩略图，返回缩略图相对路径。"""
-    # 生成 256x256 缩略图用于前端展示，减小带宽
-    ...
-```
-
-#### 5.4.2 CLIP 多模态 Embedding（`image_embedder.py`）
-
-```python
-"""Chinese-CLIP 多模态 embedding：同时支持图片和文本编码。"""
-from functools import lru_cache
-import torch
-from PIL import Image
-from transformers import ChineseCLIPModel, ChineseCLIPProcessor
-from app.core.config import get_settings
-
-
-@lru_cache
-def get_clip_model():
-    """单例加载 CLIP 模型（模型加载昂贵，进程内复用）。"""
-    settings = get_settings()
-    model = ChineseCLIPModel.from_pretrained(settings.clip_model)
-    processor = ChineseCLIPProcessor.from_pretrained(settings.clip_model)
-    device = torch.device(settings.clip_device)
-    model = model.to(device).eval()
-    return model, processor, device
-
-
-def embed_image(img: Image.Image) -> list[float]:
-    """提取图片的 CLIP 视觉向量。"""
-    model, processor, device = get_clip_model()
-    with torch.no_grad():
-        inputs = processor(images=img, return_tensors="pt").to(device)
-        features = model.get_image_features(**inputs)
-        features = features / features.norm(dim=-1, keepdim=True)  # L2 归一化
-    return features[0].cpu().tolist()
-
-
-def embed_text(text: str) -> list[float]:
-    """提取文本的 CLIP 文本向量（与图片向量同一空间，可直接相似度匹配）。"""
-    model, processor, device = get_clip_model()
-    with torch.no_grad():
-        inputs = processor(text=text, return_tensors="pt").to(device)
-        features = model.get_text_features(**inputs)
-        features = features / features.norm(dim=-1, keepdim=True)
-    return features[0].cpu().tolist()
-```
-
-#### 5.4.3 标签提取（`tag_extractor.py`）
-
-```python
-"""用 GLM-4V 多模态 LLM 提取产品图片标签，失败时降级为空标签列表。"""
-import logging
-import base64
-from langchain_core.messages import HumanMessage
-from app.core.retriever import get_llm  # 复用现有 LLM 单例模式
-from app.core.config import get_settings
-
-logger = logging.getLogger(__name__)
-
-_TAG_PROMPT = """请分析这张产品图片，提取最多 {max_count} 个核心标签。
-要求：
-1. 每行一个标签，不要编号
-2. 标签应描述产品类别、颜色、材质、风格等关键属性
-3. 只输出标签，不要解释"""
-
-
-def extract_tags(image_path: str) -> list[str]:
-    """调用 GLM-4V 提取图片标签，失败时降级为空列表（不影响索引主流程）。"""
-    settings = get_settings()
-    try:
-        with open(image_path, "rb") as f:
-            image_base64 = base64.b64encode(f.read()).decode()
-
-        llm = get_llm()  # 复用现有 LLM 单例
-        message = HumanMessage(content=[
-            {"type": "text", "text": _TAG_PROMPT.format(max_count=settings.image_tag_max_count)},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
-        ])
-        response = llm.invoke([message])
-        tags = [line.strip() for line in response.content.splitlines() if line.strip()]
-        return tags[:settings.image_tag_max_count]
-    except Exception:
-        logger.exception("标签提取失败，降级为空标签列表: %s", image_path)
-        return []
-```
-
-#### 5.4.4 图片索引主流程（`image_indexer.py`）
-
-复用 [indexer.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/indexer.py) 的状态机模式：
-
-```python
-"""图片索引主流程：注册 → 预处理 → CLIP 向量化 → 标签提取 → 写入向量库。"""
-from app.core.image_loader import load_and_preprocess, generate_thumbnail
-from app.core.image_embedder import embed_image
-from app.core.tag_extractor import extract_tags
-from app.core.image_vectorstore import get_image_vectorstore, delete_image_vectors
-from app.models.image_schemas import ImageMetadata, ImageStatus
-
-
-def index_image(image_id: str) -> ImageMetadata:
-    """对已注册的图片执行索引，状态机迁移：PENDING → EXTRACTING → READY/FAILED。"""
-    images = load_registered_images()
-    image = images[image_id]
-
-    image.status = ImageStatus.EXTRACTING_TAGS
-    save_registered_images(images)
-
-    try:
-        # 1. 预处理 + 生成缩略图
-        img = load_and_preprocess(image.file_path)
-        image.thumbnail_path = generate_thumbnail(image.file_path, ...)
-
-        # 2. CLIP 图像 embedding
-        image.status = ImageStatus.INDEXING
-        save_registered_images(images)
-        vector = embed_image(img)
-
-        # 3. 标签提取（失败降级，不中断主流程）
-        image.tags = extract_tags(image.file_path)
-
-        # 4. 写入向量库
-        delete_image_vectors(image_id)  # 重新索引前清理旧向量
-        vectorstore = get_image_vectorstore()
-        vectorstore.add_embeddings([{
-            "embedding": vector,
-            "id": image_id,
-            "metadata": image.to_payload(),
-        }])
-
-        image.status = ImageStatus.READY
-    except Exception:
-        image.status = ImageStatus.FAILED
-        raise
-    finally:
-        images[image_id] = image
-        save_registered_images(images)
-
-    return image
-```
-
-#### 5.4.5 图片检索主流程（`image_retriever.py`）
-
-```python
-"""图片检索主流程：支持文本搜图、以图搜图、标签过滤，多路 RRF 融合。"""
-from app.core.image_embedder import embed_text, embed_image
-from app.core.image_vectorstore import get_image_vectorstore
-from app.core.fusion import _RRF_K  # 复用现有 RRF 常量
-
-
-def search_by_text(query: str, category: str | None = None, top_k: int = 10) -> list:
-    """文本搜图：CLIP 文本向量 → Chroma 相似度检索。"""
-    query_vector = embed_text(query)
-    where_filter = {"category": category} if category else None
-    vectorstore = get_image_vectorstore()
-    results = vectorstore.similarity_search_by_vector(
-        embedding=query_vector, k=top_k, filter=where_filter
-    )
-    return _format_results(results)
-
-
-def search_by_image(image_base64: str, top_k: int = 10) -> list:
-    """以图搜图：CLIP 图像向量 → Chroma 相似度检索。"""
-    # base64 解码 → PIL Image → embed_image → similarity_search_by_vector
-    ...
-
-
-def search_with_fusion(query: str, tags: list[str], top_k: int = 10) -> list:
-    """多路融合：CLIP 向量检索 + 标签精确检索，RRF 融合。"""
-    # 路 A：CLIP 向量检索
-    # 路 B：标签倒排检索（tag_store）
-    # RRF 融合后截断 top_k
-    ...
-```
-
-#### 5.4.6 API 接口（`api/image.py`）
-
-```python
-"""图片搜索 API 路由。"""
-from fastapi import APIRouter, HTTPException
-from app.models.image_schemas import ImageSearchRequest, ImageSearchResponse
-
-router = APIRouter(prefix="/image", tags=["image"])
-
-
-@router.post("/search", response_model=ImageSearchResponse)
-def search(request: ImageSearchRequest) -> ImageSearchResponse:
-    """图片搜索：文本搜图 / 以图搜图 / 标签过滤。"""
-    if not request.query and not request.image_base64:
-        raise HTTPException(400, "query 和 image_base64 至少传一个")
-
-    if request.image_base64:
-        results = search_by_image(request.image_base64, request.top_k)
-        route = "image_to_image"
-    elif request.tags:
-        results = search_with_fusion(request.query, request.tags, request.top_k)
-        route = "tag_filter"
-    else:
-        results = search_by_text(request.query, request.category, request.top_k)
-        route = "text_to_image"
-
-    return ImageSearchResponse(
-        results=results, route=route, total=len(results),
-        answer_quality="no_result" if not results else "ok",
-    )
-```
+**`to_payload()` 关键处理**：
+- `tags`（list）转为逗号分隔字符串存储（Chroma 不支持 list 类型 metadata）
+- `pattern_theme`（list）同样转为逗号分隔字符串
+- `None` 和空字符串字段直接去掉（节省空间，文博字段未识别时为空字符串）
+- `datetime` 转为 ISO 字符串
 
 ---
 
-## 六、第一周交付清单（7.20 ~ 7.26）
+## 六、核心模块实现
 
-### 6.1 环境配置
+### 6.1 图片加载与预处理（`image_loader.py`）
 
-#### 6.1.1 系统要求
+详见 [image_loader.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_loader.py)。
 
-- Python 3.10+（项目已用 3.10）
-- pip 包管理器
-- 建议 8GB+ 内存（CLIP 模型推理）
-- 可选：NVIDIA GPU + CUDA（加速 CLIP 推理，CPU 也可运行）
+**核心函数**：
+- `load_and_preprocess(file_path)`：EXIF 方向修正 + RGB 转换 + 缩放到 224×224
+- `compute_image_id(file_path)`：MD5(文件内容)[:16]，相同图片自动去重
+- `generate_thumbnail(file_path, thumb_dir, image_id)`：生成 256×256 缩略图，以 image_id 命名
+- `get_image_size(file_path)`：获取原图宽高（EXIF 修正后）
 
-#### 6.1.2 安装步骤
+### 6.2 CLIP 多模态 Embedding（`image_embedder.py`）
+
+详见 [image_embedder.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_embedder.py)。
+
+**核心函数**：
+- `get_clip_model()`：`@lru_cache` 单例加载 CLIP 模型（188M 参数，进程内复用）
+- `embed_image(img)`：提取图片 CLIP 视觉向量，L2 归一化后返回 512 维
+- `embed_text(text)`：提取文本 CLIP 文本向量，与图片向量同一空间
+- `embed_images(imgs)`：**批量**图片向量化（一次前向处理多张，批量索引的核心优化点）
+
+### 6.3 文博元数据提取（`tag_extractor.py`）
+
+详见 [tag_extractor.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/tag_extractor.py)。
+
+**设计要点**：
+- 一次 GLM-4V 调用同时产出 11 个文博字段 + tags + caption，避免多次调用
+- Prompt 限定 `category_top` 为枚举值（陶瓷器/青铜器/玉器/书画/金银器/石刻/漆器/织绣/杂项）
+- JSON 解析容错：正则提取 JSON 对象，处理 ` ```json ``` ` 包裹和附加文字
+- 失败降级：返回空对象，索引继续走纯向量检索，不阻塞主流程
+- `@lru_cache` 单例 LLM（与书籍 RAG 的 `get_llm()` 分离，避免互相影响）
+
+**Prompt 设计**（见 `_RELIC_PROMPT`）：
+```
+你是资深文博藏品著录专家，请对输入的文物图片进行标准化识别与打标。
+严格输出 JSON 格式，禁止多余解释、禁止换行乱码、禁止臆造无依据信息，不确定字段填空字符串。
+
+输出字段要求：
+1. caption_standard: 标准文物著录描述（客观、形制、纹饰、材质、工艺、完整状态，50字）
+2. caption_public: 大众科普通俗描述（简洁易懂、讲清用途与看点，20字）
+3. category_top: 一级文物分类【陶瓷器、青铜器、玉器、书画、金银器、石刻、漆器、织绣、杂项】
+4. category_sub: 二级具体器型名称
+5. dynasty: 年代/朝代/文化
+6. material: 材质/质地
+7. color_feature: 色彩、釉色、沁色特征
+8. craft: 核心工艺技法
+9. pattern_theme: 纹饰题材，数组形式
+10. function_usage: 器物原始功用
+11. relic_condition: 完残状态
+12. tags: 3-{max_count} 个核心检索标签
+```
+
+### 6.4 图片索引主流程（`image_indexer.py`）
+
+详见 [image_indexer.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_indexer.py)。
+
+**核心函数**：
+- `register_image(...)`：注册元数据到 images.json，支持 caption/pdf_source/page_number
+- `index_image(image_id)`：单张索引，状态机 PENDING → EXTRACTING → INDEXING → READY/FAILED
+- `batch_index_images(image_ids, batch_size, tag_workers)`：**批量索引**，两阶段优化
+  - 阶段 1：`ThreadPoolExecutor` 并发提取文博元数据（默认 8 并发）
+  - 阶段 2：按 batch_size 分批 CLIP 向量化 + 批量写 Chroma
+- `delete_image(image_id)`：清理注册表 + 向量库 + 标签索引 + caption BM25（幂等）
+
+**并发安全**：
+- 注册表读-改-写用 `registry_lock` 保护
+- 耗时操作（标签提取、CLIP 向量化）在锁外执行
+- tag_store 内部自带 `tag_index_lock`
+- image_bm25_store 内部自带 `_lock`
+
+**`_apply_relic_metadata` 关键逻辑**：
+- caption 保留逻辑：PDF 提取的图注优先，否则用 GLM-4V 的 `caption_standard` 填充
+- category 保留逻辑：手动指定优先，否则用 `category_top` 填充
+- 结构化字段转标签：调用 `structured_fields_to_tags` 追加到 tags
+
+### 6.5 图片检索主流程（`image_retriever.py`）
+
+详见 [image_retriever.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_retriever.py)。
+
+**三路混合检索（`_hybrid_retrieve`）**：
+- 路 A：CLIP 向量召回（`search_by_vector`，语义相似）
+- 路 B：标签倒排召回（`search_by_tags`，精确命中）
+- 路 C：caption BM25 召回（`search_by_caption`，文本关键词匹配）
+
+**RRF 融合**：每路按排名贡献 `1/(k+rank+1)`，k=60（与书籍 RAG 的 `fusion.py` 一致）
+
+**自动启用混合检索**：
+- 文本搜图时，若 caption BM25 索引非空（有 PDF 提取的图片），自动启用混合检索
+- 结构化标签解析后，标签路自动参与 RRF 融合
+
+**检索路由**（`search` 函数统一入口）：
+- `text_to_image`：纯向量检索（无 tags 且无 caption 索引）
+- `text_to_image_hybrid`：三路混合检索
+- `image_to_image`：以图搜图纯向量检索
+- `image_to_image_hybrid`：以图搜图 + 标签混合检索
+
+### 6.6 标签倒排索引（`tag_store.py`）
+
+详见 [tag_store.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/tag_store.py)。
+
+- 持久化到 `data/processed/tag_index.json`
+- 存储格式：`{"青铜剑": ["image_id1", "image_id2"], ...}`
+- 模块级缓存 `_tag_index`：进程内只加载一次，写操作同步更新
+- `search_by_tags(tags, top_k)`：按命中标签数降序返回 image_id 列表
+
+### 6.7 caption BM25 索引（`image_bm25_store.py`）
+
+详见 [image_bm25_store.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/image_bm25_store.py)。
+
+- 进程内内存结构，服务重启后通过 `warm_up()` 重建（main.py startup 调用）
+- 分词策略：中文 jieba + 英文空格兜底（与书籍 BM25 一致）
+- `search_by_caption(query, top_k)`：按 BM25 分数降序返回 image_id 列表
+
+---
+
+## 七、PDF 插图提取模块（MinerU 集成）
+
+### 7.1 模块概述
+
+详见 [pdf_image_extractor.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/pdf_image_extractor.py)。
+
+通过 MinerU 精准解析 API 从 PDF 提取图片及其对应文本（caption），实现图文关联检索。这是图片 RAG 的核心增强能力：用户输入描述性文本，通过 caption 关键词命中相关图片。
+
+### 7.2 MinerU API 调用流程
+
+```
+[1] POST /api/v4/file-urls/batch
+    申请上传链接，返回 batch_id + file_urls[]
+    │
+    ▼
+[2] PUT 上传 PDF 到 file_urls[0]
+    系统自动提交解析任务
+    │
+    ▼
+[3] GET /api/v4/extract-results/batch/{batch_id}
+    轮询（间隔 5 秒，超时 600 秒）
+    state==done 时取 full_zip_url
+    │
+    ▼
+[4] 下载 ZIP 并解压
+    ZIP 内含：images/ 目录 + Markdown + middle.json
+    │
+    ▼
+[5] 解析 middle.json 建立图文映射
+    para_blocks[] 中 type=="image" 的 block：
+    - image_body（图片本体）
+    - image_footnote（图注文本，已与图片配对）
+    │
+    ▼
+[6] 复制图片到正式存储目录
+    data/images/raw/pdf/{pdf_stem}/img_001.png
+```
+
+### 7.3 大 PDF 切分与并发解析
+
+**切分阈值**（可配置）：
+- 体积超过 `pdf_split_size_mb`（默认 150MB）则切分
+- 页数超过 `pdf_split_page_threshold`（默认 150 页）则切分
+- 每个子 PDF 包含 `pdf_split_chunk_pages`（默认 100）页
+
+**并发解析**：
+- 使用 `ThreadPoolExecutor`，并发数由 `pdf_concurrent_workers` 控制（默认 2，建议 ≤3）
+- 每个子 PDF 独立调用 MinerU API，错误隔离（单个失败不影响其他）
+- 结果按原页码顺序合并
+
+### 7.4 图文映射策略
+
+**优先策略**：MinerU `middle.json` 的 `image_footnote` 配对（MinerU 已完成配对，无需坐标匹配）
+
+**降级策略**：无 `middle.json` 时，用 Markdown 的前后行匹配（简单版式）
+
+### 7.5 PDF 索引接口
+
+提供两个 API 接口：
+- `POST /image/pdf/extract`：仅提取图片，不索引（预览提取效果）
+- `POST /image/pdf/index`：提取图片并完成索引（一站式）
+
+**caption 保留逻辑**：PDF 提取的图注优先于 GLM-4V 的 `caption_standard`，确保基于原文的检索准确性。
+
+---
+
+## 八、文博结构化元数据与标签检索
+
+### 8.1 文博元数据模型
+
+通过 GLM-4V 一次调用提取 11 个文博专业字段，详见 `ImageMetadata` 的文博字段定义。
+
+**字段设计原则**：
+- `caption_standard`：客观著录描述，用于学术检索
+- `caption_public`：通俗科普描述，用于大众检索
+- `category_top`：限定 9 类枚举，确保分类一致性
+- `pattern_theme`：列表字段，支持多纹饰题材
+- 其他字段：单值，不确定时填空字符串
+
+### 8.2 结构化字段转标签
+
+详见 [cultural_relic_aliases.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/core/cultural_relic_aliases.py) 的 `structured_fields_to_tags` 函数。
+
+**命名空间映射**（`FIELD_NAMESPACE`）：
+```python
+{
+    "dynasty": "朝代",         # 如 "朝代:唐"
+    "material": "材质",        # 如 "材质:青铜"
+    "category_sub": "二级分类", # 如 "二级分类:剑"
+    "craft": "工艺",           # 如 "工艺:范铸法"
+    "function_usage": "功用",  # 如 "功用:兵器"
+    "relic_condition": "完残状态",
+    "color_feature": "色彩",
+}
+```
+
+**写入端**：`image_indexer._apply_relic_metadata` 调用此函数，把结构化字段转为 "命名空间:值" 标签追加到 tags，并入标签倒排索引。
+
+### 8.3 同义词归一化
+
+**同义词表覆盖**：
+- 朝代：18 组（商/周/春秋/战国/.../民国），含"唐代/唐朝/大唐"等别名
+- 材质：19 组（青铜/青瓷/玉/金/...），含"青铜器/铜质"等别名
+- 器型：18 组（剑/鼎/壶/瓶/罐/...），含"青铜剑/宝剑"等别名
+- 工艺：13 组（范铸法/失蜡法/刻花/...）
+- 色彩：8 组（青绿/白釉/沁色/...）
+
+### 8.4 Query 解析（规则匹配）
+
+`parse_structured_tags(query)` 函数从自然语言 query 解析出结构化标签：
+
+```
+parse_structured_tags("唐代的青铜剑")
+→ ["朝代:唐", "材质:青铜", "二级分类:剑"]
+
+parse_structured_tags("宋代的青瓷碗")
+→ ["朝代:宋", "材质:青瓷", "二级分类:碗"]
+
+parse_structured_tags("这件器物什么样")
+→ []  # 无结构化信息，返回空列表
+```
+
+**设计要点**：
+- 纯规则匹配，不调 LLM（延迟 <1ms，稳定可调试）
+- 遍历同义词表，发现 query 含某别名即生成对应标准值标签
+- 返回的标签格式与索引写入端完全一致，确保 `search_by_tags` 能精确命中
+
+**为何不用 LLM 解析 query**：
+- 延迟高（每次检索多一次 LLM 调用）
+- 不稳定（LLM 可能输出不一致的标签格式）
+- 成本高（高频查询场景下 token 消耗大）
+- 规则匹配覆盖常见场景，延迟 <1ms
+
+### 8.5 检索流程集成
+
+`image_retriever.search_by_text` 中：
+1. 调用 `parse_structured_tags(query)` 解析出结构化标签
+2. 与用户传入的 tags 合并
+3. 合并后的标签传入 `_hybrid_retrieve` 的标签路
+4. 标签路参与 RRF 融合，与向量路、caption BM25 路共同决定最终排序
+
+---
+
+## 九、RAGFlow / Dify 外部知识库对接
+
+### 9.1 对接架构
+
+```
+用户提问
+  ↓
+RAGFlow（编排/评测前端）
+  ↓ POST /api/v1/dify/retrieval
+  ↓ Headers: Authorization: Bearer <DIFY_API_KEY>
+本服务（检索后端）
+  ├─ CLIP 向量召回（语义相似）
+  ├─ 标签倒排召回（精确匹配）
+  ├─ caption BM25 召回（文本匹配）
+  └─ RRF 融合 → 返回 records
+  ↓
+RAGFlow 拿到 records，用 content 喂给 LLM 生成答案
+  ↓
+返回用户
+```
+
+### 9.2 API 规范
+
+本服务作为 RAGFlow 的**外部知识库**（检索后端），实现 Dify 外部知识库 API 规范，详见 [dify.py](file:///d:/AAAproject/01RAG/book-rag-exe/app/api/dify.py)。
+
+**请求**：
+```
+POST /api/v1/dify/retrieval
+Headers: Authorization: Bearer <api_key>
+Body: {
+    "query": "...",
+    "retrieval_setting": {"top_k": 10, "score_threshold": 0.5},
+    "knowledge_id": "...",  # 本服务忽略，单知识库
+    "metadata_condition": null  # 本服务当前忽略
+}
+```
+
+**响应**：
+```json
+{
+    "records": [
+        {
+            "content": "caption 文本（无则用 tags 拼接）",
+            "title": "product_id 或 image_id",
+            "score": 0.8,
+            "metadata": {
+                "image_id": "...",
+                "image_url": "/images/raw/xxx.jpg",
+                "tags": [...],
+                "category": "...",
+                "pdf_source": "...",
+                "dynasty": "...",
+                "material": "...",
+                ...
+            }
+        }
+    ]
+}
+```
+
+### 9.3 字段映射
+
+| 图片检索结果 | Dify record | 说明 |
+|-------------|-------------|------|
+| `caption` | `content` | 无 caption 时用 tags 拼接，确保 RAGFlow 有文本可喂给 LLM |
+| `product_id` 或 `image_id` | `title` | 图片标识 |
+| `score` | `score` | 相似度分数（0~1） |
+| `image_id`/`image_url`/`tags`/`category`/`pdf_source` + 文博字段 | `metadata` | 元数据 |
+
+### 9.4 API Key 鉴权
+
+- `_check_api_key(authorization)`：校验 `Authorization: Bearer <api_key>` 头
+- 服务端未配置 `dify_api_key`（本地调试）时跳过校验
+- 生产环境务必设置 `DIFY_API_KEY`，并与 RAGFlow 侧配置保持一致
+
+### 9.5 图片 URL 处理
+
+- retriever 返回的 `image_url` 是相对 file_path（如 `raw/xxx.jpg`）
+- `_build_record` 补 `/images` 前缀（静态文件服务挂载在 `/images` 下）
+- 若配置了 `external_base_url`，拼接为绝对 URL（如 `http://192.168.1.100:8000/images/raw/xxx.jpg`）
+- 使用 `urllib.parse.quote` 对非 ASCII 字符（中文文件名）做 percent-encoding
+
+---
+
+## 十、Docker 部署
+
+### 10.1 部署架构
+
+详见 [DEPLOY.md](file:///d:/AAAproject/01RAG/book-rag-exe/DEPLOY.md)。
+
+```
+┌─────────────────────────────────────────┐
+│         服务器                            │
+│  ┌─────────────────────────────────┐    │
+│  │ Docker Container: book-rag       │    │
+│  │  ├─ uvicorn :8000                │    │
+│  │  ├─ /app/app/ (代码)              │    │
+│  │  ├─ /app/data/ (volume 挂载)     │◄──┼── ./data 持久化
+│  │  └─ .env (volume 挂载, ro)       │◄──┼── .env 配置
+│  └─────────────────────────────────┘    │
+│  ┌─────────────────────────────────┐    │
+│  │ Docker Container: ragflow        │    │
+│  │  └─ 调用 http://host:8000/...    │    │
+│  └─────────────────────────────────┘    │
+└─────────────────────────────────────────┘
+```
+
+### 10.2 Dockerfile 设计
+
+详见 [Dockerfile](file:///d:/AAAproject/01RAG/book-rag-exe/Dockerfile)。
+
+- **多阶段构建**：builder 阶段装 torch 等重依赖，运行镜像只拷贝已装好的依赖，减小最终体积
+- **运行时系统依赖**：`libjpeg-dev`（Pillow 运行）、`libgomp1`（torch 运行）
+- **数据目录**：运行时通过 volume 挂载持久化
+- **启动命令**：`uvicorn app.main:app --host 0.0.0.0 --port 8000`
+
+### 10.3 docker-compose.yml 配置
+
+详见 [docker-compose.yml](file:///d:/AAAproject/01RAG/book-rag-exe/docker-compose.yml)。
+
+- **端口映射**：`8000:8000`
+- **数据持久化**：`./data:/app/data`（索引、图片、向量库）
+- **配置挂载**：`./.env:/app/.env:ro`（敏感信息不入镜像）
+- **环境变量**：`HF_ENDPOINT=https://hf-mirror.com`（Chinese-CLIP 模型国内镜像下载）
+- **健康检查**：每 30 秒 curl `/health`
+- **重启策略**：`unless-stopped`
+
+### 10.4 部署流程
 
 ```bash
-# 1. 进入项目目录
-cd d:\AAAproject\01RAG\book-rag-exe
+# 1. 配置环境变量
+cp .env.example .env
+# 编辑 .env，填写 OPENAI_API_KEY / MINERU_TOKEN / EXTERNAL_BASE_URL / DIFY_API_KEY
 
-# 2. 激活现有虚拟环境（已存在 .venv）
-.venv\Scripts\activate      # Windows
-# source .venv/bin/activate  # Linux/Mac
+# 2. Docker 一键启动
+docker compose up -d --build
 
-# 3. 安装原有依赖
-pip install -r requirements.txt
+# 3. 验证服务
+curl http://localhost:8000/health
+# 预期：{"status":"ok"}
 
-# 4. 安装图片 RAG 新增依赖
-pip install torch torchvision transformers  # CLIP 模型
-# Pillow 已在 .venv 中，无需重装
+# 4. 索引数据（按需）
+docker exec -it book-rag bash
+python scripts/batch_index_images.py --full      # 索引散落图片
+python scripts/batch_index_pdf.py --dir data/pdf  # 索引 PDF
 
-# 5. 验证 CLIP 模型可加载（首次会自动下载模型权重，约 1GB）
-python -c "from transformers import ChineseCLIPModel; print('CLIP 加载成功')"
-```
-
-#### 6.1.3 配置文件
-
-在 `.env` 中新增图片 RAG 配置（原有书籍 RAG 配置保留）：
-
-```env
-# === 图片 RAG 配置（新增） ===
-# 多模态 Embedding
-CLIP_MODEL=OFA-Sys/chinese-clip-vit-base-patch16
-CLIP_DEVICE=cpu
-IMAGE_EMBEDDING_DIM=512
-
-# 图片存储
-IMAGE_STORAGE_DIR=data/images
-IMAGE_THUMBNAIL_SIZE=224,224
-
-# 标签提取 LLM
-IMAGE_TAG_LLM_MODEL=glm-4v
-IMAGE_TAG_MAX_COUNT=5
-
-# 图片向量库（独立 collection）
-CHROMA_IMAGE_COLLECTION=images
-
-# 图片检索参数
-IMAGE_RETRIEVAL_TOP_K=10
-IMAGE_SCORE_THRESHOLD=0.2
-```
-
-### 6.2 技术文档
-
-即本文档（`图片RAG技术文档.md`）。
-
-### 6.3 环境验证脚本
-
-第一周末交付一个最小验证脚本 `scripts/verify_clip_env.py`，验证：
-1. Chinese-CLIP 模型可正常加载
-2. 能对一张测试图片提取向量
-3. 能对一段文本提取向量
-4. 图文向量可计算相似度
-
-```python
-# scripts/verify_clip_env.py 骨架
-"""验证 CLIP 环境可用：图片向量 + 文本向量 + 相似度计算。"""
-import torch
-from PIL import Image
-from transformers import ChineseCLIPModel, ChineseCLIPProcessor
-
-def main():
-    model = ChineseCLIPModel.from_pretrained("OFA-Sys/chinese-clip-vit-base-patch16")
-    processor = ChineseCLIPProcessor.from_pretrained("OFA-Sys/chinese-clip-vit-base-patch16")
-
-    # 1. 文本向量
-    inputs = processor(text=["一张红色连衣裙", "蓝色牛仔裤"], return_tensors="pt", padding=True)
-    with torch.no_grad():
-        text_features = model.get_text_features(**inputs)
-
-    # 2. 图片向量（用一张测试图）
-    img = Image.new("RGB", (224, 224), "red")  # 占位，实际用真实图片
-    inputs = processor(images=img, return_tensors="pt")
-    with torch.no_grad():
-        image_features = model.get_image_features(**inputs)
-
-    # 3. 相似度
-    sim = torch.cosine_similarity(image_features, text_features[0:1])
-    print(f"图文相似度: {sim.item():.4f}")
-    print("环境验证通过！")
-
-if __name__ == "__main__":
-    main()
+# 5. RAGFlow 侧配置外部知识库
+# Endpoint: http://<本服务IP>:8000/api/v1/dify
+# API Key: .env 中 DIFY_API_KEY 的值
 ```
 
 ---
 
-## 七、第二周开发计划（7.27 ~ 8.2）
+## 十一、性能优化
 
-### 7.1 目标
+### 11.1 批量 CLIP 向量化
 
-熟悉现有数据库结构，写代码接入 RAG 系统，跑通"单张图片索引 → 单次检索"的最小闭环。
+**问题**：逐张 `embed_image` 是瓶颈，每张图都要一次模型前向。
 
-### 7.2 任务分解
+**优化**：`embed_images(imgs)` 一次前向处理 batch_size 张图（默认 32）。
 
-| 序号 | 任务 | 对应模块 | 验收标准 |
-|------|------|---------|---------|
-| 1 | 扩展配置层 | `config.py` 新增图片配置 | Settings 可读取图片相关参数 |
-| 2 | 定义数据模型 | `image_schemas.py` | ImageMetadata/ImageSearchRequest 等定义完成 |
-| 3 | 实现图片加载 | `image_loader.py` | 能加载 + 预处理一张图片 |
-| 4 | 实现 CLIP embedding | `image_embedder.py` | 图片/文本都能出向量 |
-| 5 | 实现标签提取 | `tag_extractor.py` | 调用 GLM-4V 提取标签，失败可降级 |
-| 6 | 实现图片向量库 | `image_vectorstore.py` | Chroma 新建 images collection |
-| 7 | 实现索引主流程 | `image_indexer.py` | 单张图片能完成索引（状态机迁移） |
-| 8 | 实现检索主流程 | `image_retriever.py` | 文本搜图 + 以图搜图跑通 |
-| 9 | 实现 API 接口 | `api/image.py` | /image/search 接口可调用 |
-| 10 | 编写验证脚本 | `scripts/verify_image_rag.py` | 单图索引 + 检索闭环跑通 |
+**效果**：大批量索引速度提升 2-3 倍。
 
-### 7.3 验收标准
+### 11.2 并发 GLM-4V 标签提取
 
-- 能通过 API 上传/索引一张产品图片
-- 能用文本 query 搜到该图片
-- 能用图片搜到相似图片
-- 检索结果含标签、类别、相似度分数
+**问题**：GLM-4V 标签提取是主要瓶颈，串行调用耗时极长。
+
+**优化**：`batch_index_images` 中用 `ThreadPoolExecutor`，默认 8 并发（`tag_workers=8`）。
+
+**效果**：8+ 张图片的标签提取耗时降低约 70%。
+
+### 11.3 PDF 并发解析
+
+**问题**：MinerU 解析 200+ 页 PDF 需 2-5 分钟，串行处理多个 PDF 耗时过长。
+
+**优化**：
+- 大 PDF 按页切分（150MB/150 页阈值，每子 PDF 100 页）
+- `ThreadPoolExecutor` 并发调用 MinerU API（`pdf_concurrent_workers`，默认 2，建议 ≤3）
+- 错误隔离：单个子 PDF 失败不影响其他
+
+**配置**：在 `.env` 中设置 `PDF_CONCURRENT_WORKERS=3` 提升并行度。
+
+### 11.4 缩略图并行生成
+
+**问题**：缩略图生成是 CPU 密集型操作，串行处理慢。
+
+**优化**：批量索引时缩略图生成与 CLIP 向量化并行（不同步骤间无依赖）。
+
+**效果**：批量索引速度提升 20-30%。
+
+### 11.5 进程内 BM25 索引
+
+**设计**：caption BM25 索引为进程内内存结构，避免每次检索都读磁盘。
+
+**生命周期**：
+- 服务启动时 `warm_up()` 从 images.json 重建
+- 图片索引/删除时增量更新
+- 重启后自动恢复
 
 ---
 
-## 八、第三周开发计划（8.3 ~ 8.9）
+## 十二、API 接口清单
 
-### 8.1 目标
+### 12.1 图片索引接口
 
-批量索引产品图片集，部署为可用的图片 RAG 服务。
-
-### 8.2 任务分解
-
-| 序号 | 任务 | 说明 |
+| 接口 | 方法 | 说明 |
 |------|------|------|
-| 1 | 批量索引脚本 | `scripts/batch_index_images.py`，支持从目录批量索引 |
-| 2 | 并发优化 | 用 ThreadPoolExecutor 并发提取向量（复用现有并发模式） |
-| 3 | 标签倒排索引 | `tag_store.py`，支持标签精确过滤 |
-| 4 | 多路融合检索 | CLIP 向量 + 标签文本 RRF 融合 |
-| 5 | 缓存层 | 复用 query_cache 模式，缓存检索结果 |
-| 6 | 服务部署 | Uvicorn 启动 FastAPI 服务，提供 HTTP 接口 |
-| 7 | 评测脚本 | `scripts/run_image_eval.py`，计算 Recall@K / MRR |
-| 8 | 接口文档 | FastAPI 自动生成 OpenAPI，前端可对接 |
+| `/image/index` | POST | 上传单张图片并索引（multipart/form-data） |
+| `/image/batch_index` | POST | 批量上传图片并索引（支持 batch_size、tag_workers 参数） |
+| `/image/pdf/extract` | POST | 上传 PDF 仅提取图片（不索引，预览提取效果） |
+| `/image/pdf/index` | POST | 上传 PDF 提取图片并索引（一站式） |
 
-### 8.3 部署方案
+### 12.2 图片检索接口
 
-```bash
-# 启动服务
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/image/search` | POST | 文本搜图 / 以图搜图 / 混合检索（JSON body） |
+| `/api/v1/dify/retrieval` | POST | RAGFlow 外部知识库检索入口（Dify API 规范） |
 
-# 接口示例
-# 文本搜图
-curl -X POST http://localhost:8000/image/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "红色连衣裙", "top_k": 10}'
+### 12.3 图片管理接口
 
-# 以图搜图（base64）
-curl -X POST http://localhost:8000/image/search \
-  -H "Content-Type: application/json" \
-  -d '{"image_base64": "<base64>", "top_k": 10}'
-```
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/image/stats` | GET | 系统统计（图片数/向量数/标签数/caption 数） |
+| `/image/{image_id}` | GET | 查询图片元数据 |
+| `/image/{image_id}` | DELETE | 删除图片（清理所有关联数据） |
 
-### 8.4 验收标准
+### 12.4 健康检查
 
-- 批量索引 ≥100 张产品图片
-- 文本搜图 Recall@10 ≥ 0.7（标注评测集）
-- 以图搜图 Recall@10 ≥ 0.8
-- 服务可通过 HTTP 接口稳定访问
-- 接口响应时间 P95 ≤ 500ms（单次检索）
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/health` | GET | 健康检查，返回 `{"status":"ok"}` |
+
+### 12.5 静态文件服务
+
+| 路径 | 说明 |
+|------|------|
+| `/images/{path}` | 图片静态文件访问（如 `/images/raw/xxx.jpg`） |
 
 ---
 
-## 九、风险与应对
+## 十三、索引脚本与验证脚本
+
+### 13.1 索引脚本
+
+| 脚本 | 说明 | 用法 |
+|------|------|------|
+| [batch_index_images.py](file:///d:/AAAproject/01RAG/book-rag-exe/scripts/batch_index_images.py) | 批量索引散落图片 | `python scripts/batch_index_images.py --full` |
+| [batch_index_pdf.py](file:///d:/AAAproject/01RAG/book-rag-exe/scripts/batch_index_pdf.py) | 批量索引 PDF | `python scripts/batch_index_pdf.py --dir data/pdf` |
+
+**关键参数**：
+- `--full`：全量重建（先清空再索引）
+- `--batch-size`：CLIP 批量向量化的批大小（默认 32）
+- `--tag-workers`：GLM-4V 标签提取并发数（默认 8）
+- `--category`：统一产品类别
+
+### 13.2 验证脚本
+
+| 脚本 | 说明 |
+|------|------|
+| [verify_clip_env.py](file:///d:/AAAproject/01RAG/book-rag-exe/scripts/verify_clip_env.py) | 验证 CLIP 环境可用（图片向量 + 文本向量 + 相似度计算） |
+| [verify_glm4v_tags.py](file:///d:/AAAproject/01RAG/book-rag-exe/scripts/verify_glm4v_tags.py) | 验证 GLM-4V 标签提取 |
+| [verify_image_rag.py](file:///d:/AAAproject/01RAG/book-rag-exe/scripts/verify_image_rag.py) | 验证图片 RAG 闭环（单图索引 + 检索） |
+| [verify_pdf_extract.py](file:///d:/AAAproject/01RAG/book-rag-exe/scripts/verify_pdf_extract.py) | 验证 PDF 提取效果 |
+
+### 13.3 评测脚本
+
+| 脚本 | 说明 |
+|------|------|
+| [run_image_eval.py](file:///d:/AAAproject/01RAG/book-rag-exe/scripts/run_image_eval.py) | 图片检索评测（Recall@K / MRR） |
+
+### 13.4 测试
+
+| 测试文件 | 说明 |
+|---------|------|
+| [test_image_indexer.py](file:///d:/AAAproject/01RAG/book-rag-exe/tests/test_image_indexer.py) | 图片索引主流程测试 |
+| [test_image_retriever.py](file:///d:/AAAproject/01RAG/book-rag-exe/tests/test_image_retriever.py) | 图片检索主流程测试 |
+| [test_tag_store.py](file:///d:/AAAproject/01RAG/book-rag-exe/tests/test_tag_store.py) | 标签倒排索引测试 |
+| [test_pdf_image_extractor.py](file:///d:/AAAproject/01RAG/book-rag-exe/tests/test_pdf_image_extractor.py) | PDF 提取测试（含并发场景） |
+| [test_cultural_relic_aliases.py](file:///d:/AAAproject/01RAG/book-rag-exe/tests/test_cultural_relic_aliases.py) | 文博同义词与 query 解析测试 |
+
+---
+
+## 十四、已实现功能总结
+
+### 14.1 核心检索能力
+
+- ✅ **文本搜图**：CLIP 文本向量 → 图片向量相似度检索
+- ✅ **以图搜图**：CLIP 图像向量 → 图片向量相似度检索
+- ✅ **三路混合检索**：CLIP 向量 + 标签倒排 + caption BM25，RRF 融合（k=60）
+- ✅ **结构化标签检索**：自然语言 query → 结构化标签（"唐代的青铜剑" → ["朝代:唐","材质:青铜","二级分类:剑"]）
+- ✅ **category 过滤**：按产品类别过滤检索结果
+
+### 14.2 索引能力
+
+- ✅ **单张索引**：API 上传单张图片并完成索引
+- ✅ **批量索引**：批量上传图片，CLIP 批量向量化 + GLM-4V 并发标签提取
+- ✅ **PDF 索引**：MinerU API 提取 PDF 插图 + caption 并索引
+- ✅ **增量/全量索引**：脚本支持 `--full` 全量重建和增量索引
+- ✅ **图片去重**：基于文件内容 MD5，相同图片自动去重
+
+### 14.3 文博专业能力
+
+- ✅ **11 字段结构化元数据**：GLM-4V 一次调用产出朝代/材质/器型/工艺等
+- ✅ **双 caption**：标准著录描述 + 大众科普描述
+- ✅ **同义词归一化**：18 组朝代 + 19 组材质 + 18 组器型 + 13 组工艺 + 8 组色彩
+- ✅ **规则 query 解析**：纯规则匹配，延迟 <1ms
+
+### 14.4 部署与对接
+
+- ✅ **Docker 容器化**：多阶段构建 + docker-compose 一键部署
+- ✅ **RAGFlow 对接**：Dify 外部知识库 API 规范，API Key 鉴权
+- ✅ **图片 URL 处理**：`/images` 前缀 + 中文 percent-encoding
+- ✅ **健康检查**：`/health` 接口 + docker healthcheck
+
+### 14.5 工程化能力
+
+- ✅ **配置收口**：所有参数在 `config.py` 的 `Settings` 类，从 .env 读取
+- ✅ **并发安全**：`registry_lock` + `tag_index_lock` + BM25 `_lock`
+- ✅ **错误降级**：标签提取失败降级为纯向量检索，不阻塞主流程
+- ✅ **状态机**：PENDING → EXTRACTING → INDEXING → READY/FAILED
+- ✅ **单例模式**：CLIP 模型、向量库、LLM 均 `@lru_cache` 单例
+
+---
+
+## 十五、风险与应对
 
 | 风险 | 影响 | 应对措施 |
 |------|------|---------|
-| CLIP 模型下载慢/失败 | 阻塞环境搭建 | 使用 modelscope 镜像源，或提前下载权重到本地 |
-| GPU 不可用，CPU 推理慢 | 批量索引耗时 | 第一期用 CPU + 小模型（base），第三期视情况升级；批量索引可离线过夜跑 |
-| GLM-4V 标签提取限流 | 批量索引受阻 | 加重试 + 限流控制；标签提取失败降级为空标签，不阻塞索引 |
-| 产品图片数据未明确 | 第二周无法开工 | 第一周末需向老师确认数据集来源、格式、规模 |
-| Chroma 规模上限 | 第三期数据量大时性能下降 | 10 万级以内 Chroma 足够；超 50 万考虑迁移 Qdrant/Milvus |
-| 中英文混合标签 | CLIP 匹配精度下降 | 标签归一化（同义词合并）；Chinese-CLIP 已对中文优化 |
+| CLIP 模型下载慢/失败 | 阻塞环境搭建 | docker-compose 配置 `HF_ENDPOINT=https://hf-mirror.com` 国内镜像 |
+| GPU 不可用，CPU 推理慢 | 批量索引耗时 | 批量向量化（embed_images）+ 并发标签提取缓解；可离线过夜跑 |
+| GLM-4V 标签提取限流 | 批量索引受阻 | ThreadPoolExecutor 默认 8 并发，遇限流降到 4；失败降级为空标签 |
+| GLM-4V 内容审查拦截 | 部分图片（如壁画）无法提取标签 | 降级处理，记录错误并继续索引，缺失字段留空 |
+| MinerU API 限流 | PDF 解析受阻 | `pdf_concurrent_workers` 默认 2，建议 ≤3 |
+| Chroma 规模上限 | 数据量大时性能下降 | 10 万级以内 Chroma 足够；超 50 万考虑迁移 Qdrant/Milvus |
+| 重复图片导致 Chroma 报错 | 索引失败 | 基于文件内容 MD5 去重，相同图片不重复索引 |
+| 并发写注册表/标签索引 | 数据损坏 | `registry_lock` + `tag_index_lock` 文件锁保护 |
+| 中文文件名 URL 访问失败 | RAGFlow 拿不到图片 | `urllib.parse.quote` 对非 ASCII 字符做 percent-encoding |
 
 ---
 
-## 十、参考资料
+## 十六、参考资料
 
 - 现有项目设计模式文档：[design_patterns_for_reuse.md](file:///d:/AAAproject/01RAG/book-rag-exe/design_patterns_for_reuse.md)
+- 部署指南：[DEPLOY.md](file:///d:/AAAproject/01RAG/book-rag-exe/DEPLOY.md)
 - Chinese-CLIP 模型：https://huggingface.co/OFA-Sys/chinese-clip-vit-base-patch16
 - CLIP 论文：*Learning Transferable Visual Models From Natural Language Supervision*
 - RRF 融合算法：*Reciprocal Rank Fusion* 论文
 - 智谱 GLM-4V 文档：https://open.bigmodel.cn/
+- MinerU API 文档：https://mineru.net/apiManage
+- Dify 外部知识库 API 规范：https://docs.dify.ai/
 - LangChain Chroma 集成：https://python.langchain.com/docs/integrations/vectorstores/chroma
 
 ---
@@ -849,7 +1156,7 @@ curl -X POST http://localhost:8000/image/search \
 ```
 共享层：config.py / main.py / FastAPI / Chroma 持久化目录
         ├─ 书籍 RAG：api/chat.py + core/[indexer|retriever|...].py + collection=books
-        └─ 图片 RAG：api/image.py + core/image_*.py + collection=images
+        └─ 图片 RAG：api/image.py + api/dify.py + core/image_*.py + collection=images
 ```
 
 两个 RAG 子系统通过**独立 collection** 隔离数据，通过**独立 API 路由**对外提供服务，互不影响。原有书籍 RAG 功能保持不变。
@@ -861,8 +1168,14 @@ curl -X POST http://localhost:8000/image/search \
 | **RAG**（Retrieval-Augmented Generation） | 检索增强生成：先从知识库检索相关内容，再交给 LLM 生成答案 |
 | **Embedding** | 把文本/图片转成向量（一串数字），相似内容向量也相似 |
 | **CLIP** | OpenAI 提出的多模态模型，能把图片和文本映射到同一向量空间，使图文可以直接算相似度 |
+| **Chinese-CLIP** | CLIP 的中文优化版本，对中文图文对的匹配效果更好 |
 | **向量库** | 专门存储和检索向量的数据库，能快速找到"最相似的 K 个向量" |
 | **RRF 融合** | 多路检索结果的排名融合算法，不依赖各路分数绝对值，更稳健 |
+| **BM25** | 基于关键词的稀疏检索算法，对专有名词（人名/地名）召回比向量更准 |
+| **caption** | 图片对应的文本描述（PDF 提取的图注），用于基于文本查图 |
+| **倒排索引** | 从标签/关键词反向指向文档的索引结构，精确匹配速度快 |
 | **Rerank** | 对初步检索的结果做二次精排，提升精度 |
 | **top_k** | 检索时返回的最相似结果数量 |
 | **Recall@K** | 前 K 个结果中包含正确答案的比例，衡量召回质量 |
+| **MinerU** | 开源 PDF 解析服务，提供 middle.json 结构化结果，含图文配对 |
+| **Dify 外部知识库 API** | Dify/RAGFlow 定义的外部检索服务接入规范，本项目作为检索后端对接 RAGFlow |

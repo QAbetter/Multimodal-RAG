@@ -35,6 +35,7 @@ from app.core.pdf_image_extractor import (
     _parse_middle_json,
     _parse_middle_json_full,
     _should_split_pdf,
+    extract_images_from_pdf,
 )
 
 
@@ -643,3 +644,97 @@ class TestParseMiddleJsonFull:
 
         assert matched["fig1.jpg"] == "注1 说明"
         assert matched["fig2.jpg"] == "注2 说明"
+
+
+# ===========================================================================
+# 7. 并发解析测试（mock _extract_single_pdf，验证合并顺序和错误隔离）
+# ===========================================================================
+
+class TestConcurrentExtract:
+    """测试 extract_images_from_pdf 的并发解析逻辑。
+
+    通过 mock _extract_single_pdf 和 _should_split_pdf / _split_pdf / _cleanup_split_tmp，
+    验证并发场景下的结果合并顺序和错误隔离，不调真实 MinerU API。
+    """
+
+    def test_split_results_merged_in_order(self, tmp_path):
+        """切分后多个切片的结果按页码顺序合并（不按完成顺序）。"""
+        pdf_path = tmp_path / "big.pdf"
+        pdf_path.write_bytes(b"x" * 100)
+
+        # 模拟 3 个切片分别返回不同图片
+        def mock_extract(path, stem, storage_root):
+            # 按 stem 后缀区分不同切片的返回
+            if stem.endswith("part000"):
+                return [ExtractedImage(file_path="a.jpg", caption="A", image_name="a.jpg", page_number=0)]
+            elif stem.endswith("part001"):
+                return [ExtractedImage(file_path="b.jpg", caption="B", image_name="b.jpg", page_number=1)]
+            elif stem.endswith("part002"):
+                return [ExtractedImage(file_path="c.jpg", caption="C", image_name="c.jpg", page_number=2)]
+            return []
+
+        with patch("app.core.pdf_image_extractor._should_split_pdf", return_value=True), \
+             patch("app.core.pdf_image_extractor._split_pdf", return_value=[tmp_path / "p0.pdf", tmp_path / "p1.pdf", tmp_path / "p2.pdf"]), \
+             patch("app.core.pdf_image_extractor._extract_single_pdf", side_effect=mock_extract), \
+             patch("app.core.pdf_image_extractor._cleanup_split_tmp"), \
+             patch("app.core.pdf_image_extractor.get_settings") as mock_settings:
+            mock_settings.return_value.pdf_concurrent_workers = 2
+            mock_settings.return_value.image_storage_dir = str(tmp_path)
+
+            results = extract_images_from_pdf(str(pdf_path))
+
+        # 即使并发执行完成顺序不确定，最终结果也应按 part000→part001→part002 顺序合并
+        assert len(results) == 3
+        assert results[0].image_name == "a.jpg"
+        assert results[1].image_name == "b.jpg"
+        assert results[2].image_name == "c.jpg"
+
+    def test_single_part_failure_isolated(self, tmp_path):
+        """单切片失败不影响其他切片（错误隔离）。"""
+        pdf_path = tmp_path / "big.pdf"
+        pdf_path.write_bytes(b"x" * 100)
+
+        call_count = {"n": 0}
+
+        def mock_extract(path, stem, storage_root):
+            call_count["n"] += 1
+            if stem.endswith("part001"):
+                raise RuntimeError("模拟 MinerU API 失败")
+            return [ExtractedImage(file_path=f"{stem}.jpg", caption=stem, image_name=f"{stem}.jpg", page_number=0)]
+
+        with patch("app.core.pdf_image_extractor._should_split_pdf", return_value=True), \
+             patch("app.core.pdf_image_extractor._split_pdf", return_value=[tmp_path / "p0.pdf", tmp_path / "p1.pdf", tmp_path / "p2.pdf"]), \
+             patch("app.core.pdf_image_extractor._extract_single_pdf", side_effect=mock_extract), \
+             patch("app.core.pdf_image_extractor._cleanup_split_tmp"), \
+             patch("app.core.pdf_image_extractor.get_settings") as mock_settings:
+            mock_settings.return_value.pdf_concurrent_workers = 2
+            mock_settings.return_value.image_storage_dir = str(tmp_path)
+
+            results = extract_images_from_pdf(str(pdf_path))
+
+        # 3 个切片都被调用
+        assert call_count["n"] == 3
+        # part001 失败被跳过，part000 和 part002 的结果正常返回
+        assert len(results) == 2
+
+    def test_no_split_uses_single_extract(self, tmp_path):
+        """无需切分时走单文件直解路径，不走并发。"""
+        pdf_path = tmp_path / "small.pdf"
+        pdf_path.write_bytes(b"x" * 100)
+
+        single_called = {"n": 0}
+
+        def mock_extract(path, stem, storage_root):
+            single_called["n"] += 1
+            return [ExtractedImage(file_path="x.jpg", caption="X", image_name="x.jpg", page_number=0)]
+
+        with patch("app.core.pdf_image_extractor._should_split_pdf", return_value=False), \
+             patch("app.core.pdf_image_extractor._extract_single_pdf", side_effect=mock_extract), \
+             patch("app.core.pdf_image_extractor.get_settings") as mock_settings:
+            mock_settings.return_value.image_storage_dir = str(tmp_path)
+
+            results = extract_images_from_pdf(str(pdf_path))
+
+        assert single_called["n"] == 1
+        assert len(results) == 1
+        assert results[0].image_name == "x.jpg"

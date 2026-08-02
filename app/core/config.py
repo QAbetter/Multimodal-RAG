@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     pdf_split_size_mb: int = 150  # 文件体积超过此值则切分
     pdf_split_page_threshold: int = 150  # 页数超过此值则切分
     pdf_split_chunk_pages: int = 100  # 每个子PDF包含的页数（切分粒度）
+    # PDF 切分后并发解析的线程数（每切片独立调用 MinerU API）
+    # MinerU 未公开 QPS 限制，建议 2-3，过高可能触发限流
+    pdf_concurrent_workers: int = 2
 
     # ===== RAGFlow / Dify 外部知识库对接 =====
     # 外部知识库回调本服务时的基础 URL（RAGFlow 拿到 image_url 后需要能访问图片）
