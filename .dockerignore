@@ -1,0 +1,53 @@
+# ===== 敏感文件（绝不入镜像/构建上下文） =====
+.env
+.env.*
+!.env.example
+
+# ===== Python 缓存与虚拟环境 =====
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ===== 运行时数据（volume 挂载，不入镜像） =====
+data/
+data/**/*
+
+# ===== Git 与 IDE =====
+.git/
+.gitignore
+.github/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ===== 文档与测试（运行时不需要） =====
+*.md
+docs/
+tests/
+
+# ===== 操作系统生成文件 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Docker 自身文件 =====
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# ===== 临时与日志文件 =====
+*.log
+*.tmp
+*.bak
+tmp/

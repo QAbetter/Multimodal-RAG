@@ -8,6 +8,9 @@ services:
     volumes:
       # 数据持久化：重启容器不丢索引和图片
       - ./data:/app/data
+      # HuggingFace 模型缓存持久化：避免每次重启容器都重新下载 Chinese-CLIP（约 400MB）
+      # 容器内 root 用户的 HF 缓存默认在 /root/.cache/huggingface
+      - hf_cache:/root/.cache/huggingface
       # 配置文件挂载（API Key 等敏感信息不入镜像）
       - ./.env:/app/.env:ro
     environment:
@@ -20,3 +23,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+# 命名卷：由 Docker 管理，重启容器不丢失，但不进入镜像层
+volumes:
+  hf_cache:

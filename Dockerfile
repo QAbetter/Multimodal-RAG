@@ -9,7 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 COPY requirements.txt .
-# 装到独立 prefix，方便后续拷贝
+
+# 分两步装依赖：torch 单独从 CPU 索引源装，避免拉下 2GB 的 CUDA 版
+# PyPI 默认的 torch 是 CUDA 版本（约 2GB），CPU 版只有约 200MB
+# 必须先装 torch CPU 版，再装其余依赖（pip 会识别已装版本并跳过）
+RUN pip install --no-cache-dir --prefix=/install \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch>=2.0.0
+
+# 装其余依赖到独立 prefix，方便后续拷贝
+# torch 已在上一步装好，pip 检测到版本满足 requirements.txt 会跳过，不会重装 CUDA 版
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ===== 运行镜像 =====
@@ -26,10 +35,9 @@ WORKDIR /app
 # 从 builder 拷贝已装好的 Python 依赖
 COPY --from=builder /install /usr/local
 
-# 拷贝项目代码
+# 拷贝项目代码（tests/ 已在 .dockerignore 中排除，运行时不需要）
 COPY app/ ./app/
 COPY scripts/ ./scripts/
-COPY tests/ ./tests/
 
 # 数据目录（运行时通过 volume 挂载持久化）
 RUN mkdir -p data/raw data/processed data/images data/pdf data/chroma data/eval

@@ -14,7 +14,7 @@ Dify 外部知识库 API 规范（事实标准）：
 字段映射（图片检索结果 → Dify record）：
 - content: caption（图片对应的文本），无 caption 时用 tags 拼接，确保 RAGFlow 有文本可喂给 LLM
 - title: product_id 或 image_id（图片标识）
-- score: 相似度分数（0~1）
+- score: 纯向量检索为余弦相似度（0~1）；混合检索为 RRF 融合分数（量纲不同，不与 score_threshold 比较）
 - metadata: image_id / image_url / tags / category / pdf_source / page_number 等
 """
 from __future__ import annotations
@@ -87,9 +87,15 @@ def _build_record(
     result: Any,
     base_url: str,
     score_threshold: float,
+    is_hybrid: bool = False,
 ) -> Optional[DifyRecord]:
-    """把 ImageResult 转成 Dify record，低于阈值的返回 None。"""
-    if result.score < score_threshold:
+    """把 ImageResult 转成 Dify record，低于阈值的返回 None。
+
+    混合检索（is_hybrid=True）的 score 是 RRF 融合分数（量纲与余弦相似度不同），
+    不与 score_threshold 比较，与 image_retriever._check_quality 保持一致。
+    纯向量检索的 score 是余弦相似度（0~1），正常应用阈值过滤。
+    """
+    if not is_hybrid and result.score < score_threshold:
         return None
 
     # content：优先用 caption（PDF 图注或 GLM-4V 著录描述），无则用 tags 拼接
@@ -167,11 +173,27 @@ def retrieval(
         base_url="",  # image_url 用相对路径，下面再拼绝对路径
     )
 
+    # 混合检索（route 以 _hybrid 结尾）的 score 是 RRF 分数，不应用阈值过滤
+    is_hybrid = search_response.route.endswith("_hybrid")
+
     # 转成 Dify record 格式
     records: list[DifyRecord] = []
     for result in search_response.results:
-        record = _build_record(result, settings.external_base_url, score_threshold)
+        record = _build_record(
+            result, settings.external_base_url, score_threshold, is_hybrid=is_hybrid
+        )
         if record:
             records.append(record)
+
+    # 纯向量检索回退：CLIP 文-图跨模态相似度普遍偏低（0.2~0.4），
+    # RAGFlow 默认 score_threshold=0.5 会过滤掉所有结果，导致接口返回空。
+    # 若阈值过滤后无结果且原本有召回，回退到不过滤，保证 RAGFlow 拿到 top_k 候选。
+    if not is_hybrid and not records and search_response.results:
+        for result in search_response.results:
+            record = _build_record(
+                result, settings.external_base_url, 0.0, is_hybrid=False
+            )
+            if record:
+                records.append(record)
 
     return DifyRetrievalResponse(records=records)
