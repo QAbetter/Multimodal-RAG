@@ -40,6 +40,7 @@ from app.core.image_bm25_store import (
     remove_image_bm25,
     reset_image_bm25,
 )
+from app.core.cultural_relic_aliases import structured_fields_to_tags
 from app.core.locks import registry_lock
 from app.core.tag_extractor import extract_relic_metadata, RelicMetadata, _empty_metadata
 from app.core.tag_store import (
@@ -80,6 +81,20 @@ def _apply_relic_metadata(image: ImageMetadata, relic: RelicMetadata) -> None:
     image.pattern_theme = relic["pattern_theme"]
     image.function_usage = relic["function_usage"] or None
     image.relic_condition = relic["relic_condition"] or None
+
+    # 把结构化字段转为 "命名空间:值" 的标签追加到 tags，并入标签倒排索引
+    # 这样查询端用 parse_structured_tags 解析 query 后能精确命中这些字段
+    structured_tags = structured_fields_to_tags(
+        dynasty=image.dynasty,
+        material=image.material,
+        category_sub=image.category_sub,
+        craft=image.craft,
+        function_usage=image.function_usage,
+        relic_condition=image.relic_condition,
+        color_feature=image.color_feature,
+    )
+    if structured_tags:
+        image.tags = list(image.tags) + structured_tags
 
 
 def _images_registry_path() -> Path:

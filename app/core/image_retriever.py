@@ -38,6 +38,7 @@ from pathlib import Path
 from PIL import Image
 
 from app.core.config import get_settings
+from app.core.cultural_relic_aliases import parse_structured_tags
 from app.core.image_bm25_store import get_caption_stats, search_by_caption
 from app.core.image_embedder import embed_image, embed_text
 from app.core.image_vectorstore import category_filter, get_by_ids, search_by_vector
@@ -247,12 +248,17 @@ def search_by_text(
     query_vector = embed_text(query)
     where = _build_where(category)
 
+    # 从自然语言 query 解析出结构化标签（如"唐代的青铜剑" → ["朝代:唐","材质:青铜","二级分类:剑"]）
+    # 与用户传入的 tags 合并后传入标签路，让结构化字段参与 RRF 融合
+    structured_tags = parse_structured_tags(query)
+    effective_tags = list(tags) + structured_tags if tags else structured_tags
+
     # 判断是否启用混合检索：有 tags 或有 caption 索引
     has_caption_index = get_caption_stats().get("caption_indexed", 0) > 0
-    is_hybrid = bool(tags) or has_caption_index
+    is_hybrid = bool(effective_tags) or has_caption_index
     if is_hybrid:
         raw = _hybrid_retrieve(
-            query_vector, tags, top_k=k, where=where, query_text=query
+            query_vector, effective_tags, top_k=k, where=where, query_text=query
         )
         route = "text_to_image_hybrid"
     else:

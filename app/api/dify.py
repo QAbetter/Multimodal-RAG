@@ -20,6 +20,7 @@ Dify 外部知识库 API 规范（事实标准）：
 from __future__ import annotations
 
 from typing import Any, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
@@ -103,8 +104,14 @@ def _build_record(
     # retriever 返回的 image_url 是相对 file_path（如 raw/xxx.jpg），
     # 静态文件服务挂载在 /images 下（见 main.py），完整路径为 /images/raw/xxx.jpg
     image_url = result.image_url
-    if base_url and image_url and not image_url.startswith("http"):
-        image_url = f"{base_url.rstrip('/')}/images/{image_url.lstrip('/')}"
+    if image_url and not image_url.startswith("http"):
+        # 即使无 base_url 也补 /images 前缀（本地测试时作为相对路径）
+        image_url = f"/images/{image_url.lstrip('/')}"
+        if base_url:
+            image_url = f"{base_url.rstrip('/')}{image_url}"
+    # 对 URL 中的非 ASCII 字符（中文文件名/特殊符号）做 percent-encoding
+    if image_url:
+        image_url = quote(image_url, safe="/:#?=&%")
 
     metadata: dict[str, Any] = {
         "image_id": result.image_id,

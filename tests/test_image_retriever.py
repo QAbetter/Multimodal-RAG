@@ -283,12 +283,15 @@ class TestSearchRouting:
         assert resp.results == []
 
     def test_text_search_uses_text_vector(self):
-        """文本搜图：调用 embed_text 生成向量。"""
+        """文本搜图：调用 embed_text 生成向量。
+
+        query 用不含结构化信息的词（避免 parse_structured_tags 解析出标签启用混合检索）。
+        """
         mock_vector = [0.1] * 10
         mock_results = [_make_vector_result("img1", 0.9)]
         with patch("app.core.image_retriever.embed_text", return_value=mock_vector), \
              patch("app.core.image_retriever.search_by_vector", return_value=mock_results):
-            resp = search(query="青铜器")
+            resp = search(query="一件器物")
 
         assert resp.route == "text_to_image"
         assert resp.total == 1
