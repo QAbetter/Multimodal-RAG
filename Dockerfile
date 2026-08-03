@@ -15,7 +15,7 @@ COPY requirements.txt .
 # 必须先装 torch CPU 版，再装其余依赖（pip 会识别已装版本并跳过）
 RUN pip install --no-cache-dir --prefix=/install \
     --index-url https://download.pytorch.org/whl/cpu \
-    torch>=2.0.0
+    "torch>=2.0.0"
 
 # 装其余依赖到独立 prefix，方便后续拷贝
 # torch 已在上一步装好，pip 检测到版本满足 requirements.txt 会跳过，不会重装 CUDA 版
