@@ -13,13 +13,22 @@ COPY requirements.txt .
 # 分两步装依赖：torch 单独从 CPU 索引源装，避免拉下 2GB 的 CUDA 版
 # PyPI 默认的 torch 是 CUDA 版本（约 2GB），CPU 版只有约 200MB
 # 必须先装 torch CPU 版，再装其余依赖（pip 会识别已装版本并跳过）
+# --retries/--timeout：国内访问 PyPI/pytorch.org 不稳定，增加重试避免单次超时失败
+# --extra-index-url 清华源：torch 的依赖（networkx/jinja2 等）从国内镜像下载，避免 pythonhosted.org 超时
+# torch 本身仍走 pytorch 官方 CPU 源（2.13.0+cpu 的 local version 高于清华源的 CUDA 版，pip 会选 CPU 版）
 RUN pip install --no-cache-dir --prefix=/install \
+    --retries 5 --timeout 300 \
     --index-url https://download.pytorch.org/whl/cpu \
+    --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple \
     "torch>=2.0.0"
 
 # 装其余依赖到独立 prefix，方便后续拷贝
 # torch 已在上一步装好，pip 检测到版本满足 requirements.txt 会跳过，不会重装 CUDA 版
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# 清华源加速国内下载，retries/timeout 防止超时
+RUN pip install --no-cache-dir --prefix=/install \
+    --retries 5 --timeout 300 \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    -r requirements.txt
 
 # ===== 运行镜像 =====
 FROM python:3.11-slim
