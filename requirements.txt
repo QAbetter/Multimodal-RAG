@@ -8,6 +8,8 @@ chromadb>=0.5.5,<0.6.0
 pydantic>=2.8.0,<3.0.0
 pydantic-settings>=2.4.0,<3.0.0
 fastapi>=0.115.0,<0.116.0
+# python-multipart：FastAPI 文件上传接口（/image/index）必需，缺失会导致启动报错
+python-multipart>=0.0.9
 uvicorn[standard]>=0.30.0,<0.31.0
 pypdf>=4.3.0,<5.0.0
 ebooklib>=0.18,<0.19
@@ -24,7 +26,9 @@ ragas>=0.2.0,<0.3.0
 datasets>=2.20.0,<3.0.0
 # ===== 图片 RAG 依赖 =====
 # torch：Chinese-CLIP 推理框架（CPU 版即可，有 GPU 可装 CUDA 版）
-torch>=2.0.0
+# 锁定 <2.6 上限：Dockerfile 已用 pytorch CPU 源装好 torch（约2.5.x+cpu），
+# 若不加上限，builder 7/7 从清华源装 requirements.txt 时会下载 2.13.0 CUDA 版（526MB+一堆 nvidia 包）
+torch>=2.0.0,<2.6
 # transformers：必须锁定 4.x，5.x 要求 tokenizers>=0.22 与 chromadb(<=0.20.3) 冲突
 transformers>=4.44.0,<4.47.0
 # Pillow：图片加载与预处理（EXIF 修正、缩放、缩略图）
