@@ -2,6 +2,9 @@
 # 多阶段构建：先用 builder 装 torch 等重依赖，再拷到运行镜像，减小最终体积
 FROM python:3.11-slim AS builder
 
+# 换阿里云 Debian 源（国内服务器拉 deb.debian.org 很慢）
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources
+
 # 系统依赖（Pillow/torch 编译需要）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -32,6 +35,9 @@ RUN pip install --no-cache-dir --prefix=/install \
 
 # ===== 运行镜像 =====
 FROM python:3.11-slim
+
+# 换阿里云 Debian 源（国内服务器拉 deb.debian.org 很慢）
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources
 
 # 运行时系统依赖（Pillow 运行需要 libjpeg，torch 运行需要 libgomp）
 RUN apt-get update && apt-get install -y --no-install-recommends \
