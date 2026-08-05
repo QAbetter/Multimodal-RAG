@@ -66,8 +66,11 @@ def batch_delete_image_vectors(image_ids: list[str]) -> None:
     """批量删除向量（重新索引前清理旧数据）。"""
     if not image_ids:
         return
+    # 去重（保留顺序）：重复 ID 会导致 Chroma delete 抛 DuplicateIDError
+    seen = set()
+    unique_ids = [iid for iid in image_ids if not (iid in seen or seen.add(iid))]
     collection = get_image_collection()
-    collection.delete(ids=image_ids)
+    collection.delete(ids=unique_ids)
 
 
 def batch_add_image_vectors(items: list[dict]) -> None:
@@ -156,8 +159,12 @@ def get_by_ids(image_ids: list[str]) -> dict[str, dict]:
     """
     if not image_ids:
         return {}
+    # 去重（保留顺序）：混合检索的标签路和 caption 路可能召回同一张图，
+    # 合并后存在重复 ID，Chroma 的 get() 不接受重复 ID 会抛 DuplicateIDError
+    seen = set()
+    unique_ids = [iid for iid in image_ids if not (iid in seen or seen.add(iid))]
     collection = get_image_collection()
-    results = collection.get(ids=image_ids)
+    results = collection.get(ids=unique_ids)
     return {
         id_: meta for id_, meta in zip(results.get("ids", []), results.get("metadatas", []))
     }
