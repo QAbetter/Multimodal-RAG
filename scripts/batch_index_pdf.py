@@ -158,6 +158,12 @@ def main() -> None:
     print(f"耗时: {elapsed:.1f} 秒")
     print("=" * 60)
 
+    # Chroma 的 Posthog 遥测线程在 Linux 下是非 daemon 线程，会阻止解释器退出。
+    # 数据已全部落盘，直接 _exit(0) 绕过清理，避免脚本结束后挂起。
+    # Windows 下该线程是 daemon，无此问题，所以本地不受影响。
+    import os
+    os._exit(0)
+
 
 if __name__ == "__main__":
     main()
