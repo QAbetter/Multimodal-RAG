@@ -164,6 +164,72 @@ def register_image(
     return image
 
 
+def batch_register_images(
+    items: list[dict],
+    skip_existing_ready: bool = False,
+) -> tuple[list[ImageMetadata], list[ImageMetadata]]:
+    """批量注册图片：并行算 MD5+尺寸，串行更新注册表，最后写一次。
+
+    items: [{"file_path": str, "product_id": str, "category": str|None, ...}, ...]
+    可选字段：tags, caption, pdf_source, page_number（与 register_image 一致）。
+
+    比逐个调用 register_image 快 N 倍：
+    - MD5 + get_image_size 并行做（I/O bound，8 线程）
+    - 注册表只读 1 次 + 写 1 次（而非 N 次全表读写）
+
+    skip_existing_ready=True 时，已在注册表中且状态为 READY 的图片不会被覆盖，
+    返回的 skipped 列表包含这些已就绪图片，registered 列表只包含新注册的图片。
+    skip_existing_ready=False 时，所有图片都会被注册（覆盖），registered 返回全部。
+
+    返回 (registered, skipped)：
+    - registered: 本次写入注册表的 ImageMetadata 列表（PENDING 状态）
+    - skipped: 已存在且 READY 的 ImageMetadata 列表（未覆盖，仅当 skip_existing_ready=True）
+    """
+    if not items:
+        return [], []
+
+    settings = get_settings()
+
+    def _compute_one(item: dict) -> ImageMetadata:
+        """单张图片的 MD5 + 尺寸计算（线程池内并行执行）。"""
+        abs_path = Path(settings.image_storage_dir) / item["file_path"]
+        image_id = compute_image_id(str(abs_path))
+        width, height = get_image_size(str(abs_path))
+        return ImageMetadata(
+            image_id=image_id,
+            product_id=item["product_id"],
+            category=item.get("category"),
+            file_path=item["file_path"],
+            tags=item.get("tags") or [],
+            width=width,
+            height=height,
+            status=ImageStatus.PENDING,
+            caption=item.get("caption"),
+            pdf_source=item.get("pdf_source"),
+            page_number=item.get("page_number"),
+        )
+
+    # 1. 并行计算 MD5 + 尺寸（I/O bound）
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        computed = list(pool.map(_compute_one, items))
+
+    # 2. 筛选 + 串行更新注册表，只读写 1 次
+    registered: list[ImageMetadata] = []
+    skipped: list[ImageMetadata] = []
+    with registry_lock:
+        registry = load_registered_images()
+        for img in computed:
+            existing = registry.get(img.image_id)
+            if skip_existing_ready and existing and existing.status.value == "ready":
+                skipped.append(existing)
+            else:
+                registry[img.image_id] = img
+                registered.append(img)
+        save_registered_images(registry)
+
+    return registered, skipped
+
+
 def get_image(image_id: str) -> ImageMetadata | None:
     return load_registered_images().get(image_id)
 

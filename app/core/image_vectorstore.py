@@ -78,14 +78,25 @@ def batch_add_image_vectors(items: list[dict]) -> None:
 
     items: [{"id": str, "embedding": list[float], "metadata": dict}, ...]
     比循环调用 add_image_vector 快，减少 Chroma 内部事务次数。
+
+    注意：不同文件可能内容相同（相同 MD5 → 相同 image_id），
+    同一 batch 内重复 id 会导致 Chroma DuplicateIDError，这里按 id 去重。
     """
     if not items:
         return
+    # 按 id 去重，相同 id 只保留第一个（内容相同，embedding 也相同）
+    seen: set[str] = set()
+    unique_items: list[dict] = []
+    for it in items:
+        iid = it["id"]
+        if iid not in seen:
+            seen.add(iid)
+            unique_items.append(it)
     collection = get_image_collection()
     collection.add(
-        ids=[it["id"] for it in items],
-        embeddings=[it["embedding"] for it in items],
-        metadatas=[it["metadata"] for it in items],
+        ids=[it["id"] for it in unique_items],
+        embeddings=[it["embedding"] for it in unique_items],
+        metadatas=[it["metadata"] for it in unique_items],
     )
 
 

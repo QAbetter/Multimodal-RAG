@@ -36,8 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.core.config import get_settings
 from app.core.image_indexer import (
     batch_index_images,
+    batch_register_images,
     load_registered_images,
-    register_image,
     save_registered_images,
 )
 from app.core.image_vectorstore import reset_image_collection
@@ -92,27 +92,37 @@ def run_incremental(raw_dir: Path, category: str | None, batch_size: int, tag_wo
     print(f"[增量模式] 扫描到 {len(files)} 张图片，注册表中已有 {len(registry)} 条记录")
     print("-" * 60)
 
-    # 第一遍：注册 + 筛选出需要索引的图片
-    to_index = []  # 需要索引的 (image_id, file_name)
-    skipped = 0
-
-    for i, file_path in enumerate(files, 1):
+    # 第一遍：批量注册（并行算 MD5+尺寸，只读写注册表 1 次）
+    # skip_existing_ready=True：已 READY 的图片不会被覆盖
+    print(f"批量注册 {len(files)} 张图片（并行计算 MD5+尺寸）...")
+    register_items = []
+    for file_path in files:
         rel_path = f"raw/{file_path.relative_to(raw_dir)}"
         product_id = file_path.stem
         cat = infer_category(file_path, raw_dir, category)
-        image = register_image(rel_path, product_id, category=cat)
-        image_id = image.image_id
+        register_items.append({
+            "file_path": rel_path,
+            "product_id": product_id,
+            "category": cat,
+        })
 
-        if image_id in registry and registry[image_id].status.value == "ready":
-            print(f"  [{i}/{len(files)}] 跳过 {file_path.name}（已索引）")
-            skipped += 1
+    registered, skipped_imgs = batch_register_images(register_items, skip_existing_ready=True)
+    print(f"  注册 {len(registered)} | 跳过已索引 {len(skipped_imgs)} | 共 {len(files)}")
+
+    # 去重：相同内容（相同 image_id）在 registered 里只保留第一个
+    to_index = []  # (image_id, file_name)
+    seen_ids: set[str] = set()
+    dup_skipped = 0
+    for img in registered:
+        if img.image_id in seen_ids:
+            dup_skipped += 1
         else:
-            print(f"  [{i}/{len(files)}] 待索引 {file_path.name}")
-            to_index.append((image_id, file_path.name))
+            to_index.append((img.image_id, Path(img.file_path).name))
+            seen_ids.add(img.image_id)
 
     if not to_index:
         print("-" * 60)
-        print(f"[完成] 跳过 {skipped} | 共 {len(files)}（无需索引新图片）")
+        print(f"[完成] 跳过 {len(skipped_imgs)} | 重复跳过 {dup_skipped} | 共 {len(files)}（无需索引新图片）")
         return
 
     # 第二遍：批量索引（CLIP 批量向量化 + 标签并发提取）
@@ -132,7 +142,7 @@ def run_incremental(raw_dir: Path, category: str | None, batch_size: int, tag_wo
         print(f"  {status_icon} {name_map.get(r.image_id, r.image_id[:8])} 状态={r.status.value} {tags_str}")
 
     print("-" * 60)
-    print(f"[完成] 成功 {indexed} | 跳过 {skipped} | 失败 {failed} | 共 {len(files)}")
+    print(f"[完成] 成功 {indexed} | 跳过 {len(skipped_imgs)} | 重复跳过 {dup_skipped} | 失败 {failed} | 共 {len(files)}")
 
 
 def run_full(raw_dir: Path, category: str | None, batch_size: int, tag_workers: int) -> None:
@@ -156,18 +166,34 @@ def run_full(raw_dir: Path, category: str | None, batch_size: int, tag_workers: 
     save_registered_images({})
     print("      ✓ 已清空")
 
-    # 3. 注册所有图片
+    # 3. 批量注册所有图片（并行算 MD5+尺寸，只读写注册表 1 次）
     print("-" * 60)
-    print(f"注册 {len(files)} 张图片...")
-    image_ids = []
-    name_map = {}
+    print(f"批量注册 {len(files)} 张图片（并行计算 MD5+尺寸）...")
+    register_items = []
     for file_path in files:
         rel_path = f"raw/{file_path.relative_to(raw_dir)}"
         product_id = file_path.stem
         cat = infer_category(file_path, raw_dir, category)
-        image = register_image(rel_path, product_id, category=cat)
-        image_ids.append(image.image_id)
-        name_map[image.image_id] = file_path.name
+        register_items.append({
+            "file_path": rel_path,
+            "product_id": product_id,
+            "category": cat,
+        })
+
+    registered, _ = batch_register_images(register_items, skip_existing_ready=False)
+
+    # 去重：相同内容（相同 image_id）只索引第一个
+    image_ids = []
+    name_map = {}
+    seen_ids: set[str] = set()
+    dup_skipped = 0
+    for img in registered:
+        if img.image_id in seen_ids:
+            dup_skipped += 1
+            continue
+        seen_ids.add(img.image_id)
+        image_ids.append(img.image_id)
+        name_map[img.image_id] = Path(img.file_path).name
 
     # 4. 批量索引（CLIP 批量向量化 + 标签并发提取）
     print(f"批量索引 {len(image_ids)} 张图片（batch_size={batch_size}, tag_workers={tag_workers}）...")
@@ -182,7 +208,7 @@ def run_full(raw_dir: Path, category: str | None, batch_size: int, tag_workers: 
         print(f"  {status_icon} {name_map.get(r.image_id, r.image_id[:8])} 状态={r.status.value} {tags_str}")
 
     print("-" * 60)
-    print(f"[完成] 成功 {indexed} | 失败 {failed} | 共 {len(files)}")
+    print(f"[完成] 成功 {indexed} | 重复跳过 {dup_skipped} | 失败 {failed} | 共 {len(files)}")
 
 
 def main() -> None:
