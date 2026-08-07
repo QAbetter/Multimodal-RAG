@@ -47,13 +47,37 @@ _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 
 def scan_image_files(raw_dir: Path) -> list[Path]:
-    """扫描目录下的所有图片文件，按文件名排序。"""
+    """扫描目录及所有子目录下的图片文件，按相对路径排序。
+
+    使用 rglob 递归扫描，支持 data/images/raw/瓷器/xxx.jpg 这种子目录结构。
+    跳过 pdf/ 子目录（由 batch_index_pdf.py 独立管理，避免覆盖 caption/pdf_source）
+    和 PDF 处理的临时目录。
+    """
     if not raw_dir.exists():
         return []
-    return sorted(
-        [p for p in raw_dir.iterdir() if p.is_file() and p.suffix.lower() in _IMAGE_EXTS],
-        key=lambda p: p.name,
-    )
+    skip_dirs = {"pdf", ".pdf_split_tmp", ".pdf_extract_tmp"}
+    results = []
+    for p in raw_dir.rglob("*"):
+        if not p.is_file() or p.suffix.lower() not in _IMAGE_EXTS:
+            continue
+        rel_parts = p.relative_to(raw_dir).parts
+        if any(part in skip_dirs for part in rel_parts):
+            continue
+        results.append(p)
+    return sorted(results, key=lambda p: str(p.relative_to(raw_dir)))
+
+
+def infer_category(file_path: Path, raw_dir: Path, explicit_category: str | None) -> str | None:
+    """推断图片类别：显式指定优先，否则用第一级子目录名。
+
+    例：raw/瓷器/李白.jpg → "瓷器"；raw/李白.jpg → None。
+    """
+    if explicit_category:
+        return explicit_category
+    rel = file_path.relative_to(raw_dir)
+    if len(rel.parts) > 1:  # 在子目录下
+        return rel.parts[0]
+    return None
 
 
 def run_incremental(raw_dir: Path, category: str | None, batch_size: int, tag_workers: int) -> None:
@@ -73,9 +97,10 @@ def run_incremental(raw_dir: Path, category: str | None, batch_size: int, tag_wo
     skipped = 0
 
     for i, file_path in enumerate(files, 1):
-        rel_path = f"raw/{file_path.name}"
+        rel_path = f"raw/{file_path.relative_to(raw_dir)}"
         product_id = file_path.stem
-        image = register_image(rel_path, product_id, category=category)
+        cat = infer_category(file_path, raw_dir, category)
+        image = register_image(rel_path, product_id, category=cat)
         image_id = image.image_id
 
         if image_id in registry and registry[image_id].status.value == "ready":
@@ -137,9 +162,10 @@ def run_full(raw_dir: Path, category: str | None, batch_size: int, tag_workers: 
     image_ids = []
     name_map = {}
     for file_path in files:
-        rel_path = f"raw/{file_path.name}"
+        rel_path = f"raw/{file_path.relative_to(raw_dir)}"
         product_id = file_path.stem
-        image = register_image(rel_path, product_id, category=category)
+        cat = infer_category(file_path, raw_dir, category)
+        image = register_image(rel_path, product_id, category=cat)
         image_ids.append(image.image_id)
         name_map[image.image_id] = file_path.name
 
@@ -163,7 +189,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="批量索引图片")
     parser.add_argument("--full", action="store_true", help="全量重建（清空向量库和注册表后重新索引）")
     parser.add_argument("--dir", type=str, default=None, help="图片扫描目录（默认 data/images/raw/）")
-    parser.add_argument("--category", type=str, default=None, help="统一设置图片类别（不设置则为 None）")
+    parser.add_argument("--category", type=str, default=None, help="统一设置图片类别（不设置则按第一级子目录名自动推断，如 raw/瓷器/x.jpg → 瓷器）")
     parser.add_argument("--batch-size", type=int, default=32, help="CLIP 批量向量化的批大小（默认 32）")
     parser.add_argument("--tag-workers", type=int, default=8, help="GLM-4V 标签提取并发数（默认 8，限流可降到 4）")
     args = parser.parse_args()

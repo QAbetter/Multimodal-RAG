@@ -197,3 +197,92 @@ def retrieval(
                 records.append(record)
 
     return DifyRetrievalResponse(records=records)
+
+
+class DifyImageRetrievalRequest(BaseModel):
+    """Dify 图片检索请求（以图搜图模式）。
+
+    image_base64 支持两种格式：
+    1. 纯 base64 字符串（不含 data: 前缀）
+    2. data URL（如 "data:image/webp;base64,xxxx"），RAGFlow 的 sys.files 即此格式
+    """
+
+    image_base64: Any = Field(..., description="图片 base64（str 或 list[str]，RAGFlow sys.files 是数组）")
+    retrieval_setting: RetrievalSetting = Field(default_factory=RetrievalSetting)
+
+
+def _strip_data_url(image_str: str) -> str:
+    """剥离 data URL 前缀，返回纯 base64 字符串。
+
+    RAGFlow 的 sys.files 传 "data:image/webp;base64,xxxx"，
+    search_by_image 内部 base64.b64decode 只接受纯 base64。
+    """
+    if image_str.startswith("data:") and ";base64," in image_str:
+        return image_str.split(";base64,", 1)[1]
+    return image_str
+
+
+def _normalize_image_base64(value: Any) -> str:
+    """归一化 image_base64：兼容 str 和 list[str]。
+
+    RAGFlow 的 sys.files 是数组类型 ["data:image/...;base64,..."]，
+    后端只需要第一个元素。纯 base64 字符串直接返回。
+    """
+    if isinstance(value, list):
+        if not value:
+            raise HTTPException(status_code=400, detail="image_base64 数组为空")
+        value = value[0]
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail="image_base64 应为字符串或字符串数组")
+    return value
+
+
+@router.post("/retrieval/image", response_model=DifyRetrievalResponse)
+def retrieval_by_image(
+    request: DifyImageRetrievalRequest,
+    authorization: str | None = Header(None),
+) -> DifyRetrievalResponse:
+    """Dify / RAGFlow 以图搜图检索入口。
+
+    RAGFlow Agent 的 HTTP Request 节点把 sys.files（data URL）传入 image_base64，
+    本服务用 CLIP 图像编码后做向量检索，返回相似图片。
+    """
+    _check_api_key(authorization)
+
+    settings = get_settings()
+    top_k = request.retrieval_setting.top_k or settings.image_retrieval_top_k
+    score_threshold = request.retrieval_setting.score_threshold or 0.0
+
+    # 归一化（兼容 list）+ 剥离 data URL 前缀，转成纯 base64
+    image_base64_str = _normalize_image_base64(request.image_base64)
+    pure_base64 = _strip_data_url(image_base64_str)
+
+    search_response = search(
+        query=None,
+        image_base64=pure_base64,
+        category=None,
+        tags=None,
+        top_k=top_k,
+        base_url="",  # image_url 用相对路径，下面 _build_record 再拼绝对路径
+    )
+
+    is_hybrid = search_response.route.endswith("_hybrid")
+
+    records: list[DifyRecord] = []
+    for result in search_response.results:
+        record = _build_record(
+            result, settings.external_base_url, score_threshold, is_hybrid=is_hybrid
+        )
+        if record:
+            records.append(record)
+
+    # 纯向量检索回退：以图搜图的 CLIP 图-图相似度也可能偏低，保证返回候选
+    if not is_hybrid and not records and search_response.results:
+        for result in search_response.results:
+            record = _build_record(
+                result, settings.external_base_url, 0.0, is_hybrid=False
+            )
+            if record:
+                records.append(record)
+
+    return DifyRetrievalResponse(records=records)

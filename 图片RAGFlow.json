@@ -1,0 +1,183 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "data": {
+          "form": {
+            "content_types": "application/json",
+            "enablePrologue": false,
+            "execution_mode": "Immediately",
+            "inputs": {
+              "query": {
+                "key": "query",
+                "name": "用户问题",
+                "optional": false,
+                "options": [],
+                "type": "line",
+                "value": ""
+              }
+            },
+            "methods": ["GET"],
+            "mode": "conversational",
+            "outputs": {},
+            "prologue": "Hi! I'm your assistant. What can I do for you?",
+            "response": { "status": 200 },
+            "schema": { "body": [], "headers": [], "query": [] },
+            "security": {
+              "auth_type": "basic",
+              "basic_auth": {},
+              "ip_whitelist": [],
+              "max_body_size": "1MB",
+              "rate_limit": { "limit": 10, "per": "second" }
+            }
+          },
+          "label": "Begin",
+          "name": "begin"
+        },
+        "id": "begin",
+        "measured": { "width": 200, "height": 109 },
+        "position": { "x": 50, "y": 200 },
+        "selected": false,
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "clean_html": false,
+            "headers": "{\n  \"Authorization\": \"Bearer my_api_key_2026\",\n  \"Content-Type\": \"application/json\"\n}",
+            "method": "POST",
+            "outputs": { "result": { "type": "string", "value": "" } },
+            "proxy": "",
+            "timeout": 60,
+            "url": "http://book-rag:8000/api/v1/dify/retrieval",
+            "variables": [
+              { "key": "query", "ref": "begin@query", "value": "{{query}}" }
+            ]
+          },
+          "label": "Invoke",
+          "name": "HTTP 请求_0"
+        },
+        "id": "Invoke:BumpySignsNotice",
+        "measured": { "height": 49, "width": 200 },
+        "position": { "x": 350, "y": 200 },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "glm-4.5v@图片RAG@ZHIPU-AI",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 256,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": { "content": { "type": "string", "value": "" } },
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "content": "参考文档：\n{Invoke:BumpySignsNotice@result}\n\n用户问题：\n{begin@query}",
+                "role": "user"
+              }
+            ],
+            "showStructuredOutput": false,
+            "sys_prompt": "你是文博图片知识助手。下方检索结果是图片库召回记录，每条包含：\n- content：图片文本描述\n- title：图片标识\n- score：相似度分数\n- metadata.image_url：图片访问链接\n- metadata.tags：图片标签\n\n严格遵循规则：\n1. 如果records为空数组，直接回复\"未找到相关图片\"，禁止编造任何信息。\n2. 回答末尾用markdown列表列出相关图片，格式：图片简要描述 - [查看图片](image_url)\n3. 只使用检索返回的内容，禁止脑补不存在文物细节。",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "tools": [],
+            "topPEnabled": true,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          },
+          "label": "Agent",
+          "name": "智能体_0"
+        },
+        "id": "Agent:StalePoemsBake",
+        "measured": { "height": 79, "width": 200 },
+        "position": { "x": 617.5, "y": 208.5 },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "agentNode"
+      },
+      {
+        "data": {
+          "form": {
+            "auto_play": false,
+            "content": ["{Agent:StalePoemsBake@content}"]
+          },
+          "label": "Message",
+          "name": "回复消息_0"
+        },
+        "id": "Message:ManyKidsHide",
+        "measured": { "height": 85, "width": 200 },
+        "position": { "x": 917.5, "y": 208.5 },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      }
+    ],
+    "edges": [
+      {
+        "data": { "isHovered": false },
+        "id": "xy-edge__beginstart-Invoke:BumpySignsNoticeend",
+        "source": "begin",
+        "sourceHandle": "start",
+        "target": "Invoke:BumpySignsNotice",
+        "targetHandle": "end"
+      },
+      {
+        "data": { "isHovered": false },
+        "id": "xy-edge__Invoke:BumpySignsNoticestart-Agent:StalePoemsBakeend",
+        "markerEnd": "logo",
+        "source": "Invoke:BumpySignsNotice",
+        "sourceHandle": "start",
+        "target": "Agent:StalePoemsBake",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": { "isHovered": false },
+        "id": "xy-edge__Agent:StalePoemsBakestart-Message:ManyKidsHideend",
+        "source": "Agent:StalePoemsBake",
+        "sourceHandle": "start",
+        "target": "Message:ManyKidsHide",
+        "targetHandle": "end"
+      }
+    ]
+  },
+  "globals": {
+    "env.query": "",
+    "sys.conversation_turns": 0,
+    "sys.date": "",
+    "sys.files": [],
+    "sys.history": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "variables": {
+    "query": {
+      "description": "",
+      "name": "query",
+      "type": "string",
+      "value": ""
+    }
+  }
+}

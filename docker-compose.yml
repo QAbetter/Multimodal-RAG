@@ -23,7 +23,19 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - default
+      - ragflow_net
 
 # 命名卷：由 Docker 管理，重启容器不丢失，但不进入镜像层
 volumes:
   hf_cache:
+
+networks:
+  default:
+    driver: bridge
+  # 加入 RAGFlow 的 Docker 网络，让 RAGFlow 容器能用容器名 book-rag 直接访问本服务
+  # 不需要放行 8000 公网端口，走 Docker 内部网络更安全更快
+  ragflow_net:
+    external: true
+    name: docker_ragflow

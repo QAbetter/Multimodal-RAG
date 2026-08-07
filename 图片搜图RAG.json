@@ -1,0 +1,175 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "data": {
+          "form": {
+            "content_types": "application/json",
+            "enablePrologue": false,
+            "execution_mode": "Immediately",
+            "inputs": {},
+            "methods": ["GET"],
+            "mode": "conversational",
+            "outputs": {},
+            "prologue": "请上传一张图片，我会从图片库中找出最相似的文物图片。",
+            "response": { "status": 200 },
+            "schema": { "body": [], "headers": [], "query": [] },
+            "security": {
+              "auth_type": "basic",
+              "basic_auth": {},
+              "ip_whitelist": [],
+              "max_body_size": "10MB",
+              "rate_limit": { "limit": 10, "per": "second" }
+            }
+          },
+          "label": "Begin",
+          "name": "begin"
+        },
+        "dragging": false,
+        "id": "begin",
+        "measured": { "height": 81, "width": 200 },
+        "position": { "x": 9.19, "y": 200.93 },
+        "selected": false,
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "clean_html": false,
+            "headers": "{\n  \"Authorization\": \"Bearer my_api_key_2026\",\n  \"Content-Type\": \"application/json\"\n}",
+            "method": "POST",
+            "outputs": { "result": { "type": "string", "value": "" } },
+            "proxy": "",
+            "timeout": 60,
+            "url": "http://book-rag:8000/api/v1/dify/retrieval/image",
+            "variables": [
+              { "key": "image_base64", "ref": "sys.files", "value": "{{image_base64}}" }
+            ]
+          },
+          "label": "Invoke",
+          "name": "HTTP 请求_0"
+        },
+        "dragging": false,
+        "id": "Invoke:ImageSearch",
+        "measured": { "height": 49, "width": 200 },
+        "position": { "x": 237.78, "y": 215.77 },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "ragNode"
+      },
+      {
+        "data": {
+          "form": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "glm-4.5v@图片RAG@ZHIPU-AI",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 1024,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": { "content": { "type": "string", "value": "" } },
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "content": "用户上传了一张图片进行以图搜图。下方检索结果是图片库中与该图最相似的记录：\n{Invoke:ImageSearch@result}",
+                "role": "user"
+              }
+            ],
+            "showStructuredOutput": false,
+            "sys_prompt": "你是文博图片知识助手。用户上传一张图片，系统通过 CLIP 以图搜图从图片库召回最相似的文物图片记录，每条包含：\n- content：图片文本描述\n- title：图片标识\n- score：相似度分数\n- metadata.image_url：图片访问链接\n- metadata.tags：图片标签\n\n严格遵循规则：\n1. 如果 records 为空数组，直接回复\"未找到相似图片\"，禁止编造任何信息。\n2. 回答末尾用 markdown 列表列出相似图片，格式：图片简要描述 - [查看图片](image_url)\n3. 只使用检索返回的内容，禁止脑补不存在文物细节。\n4. 可以简要说明这些图片与用户上传图片的相似点（基于 tags 和 content）。",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "tools": [],
+            "topPEnabled": true,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          },
+          "label": "Agent",
+          "name": "智能体_0"
+        },
+        "dragging": false,
+        "id": "Agent:StalePoemsBake",
+        "measured": { "height": 79, "width": 200 },
+        "position": { "x": 472.82, "y": 200.15 },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "agentNode"
+      },
+      {
+        "data": {
+          "form": {
+            "auto_play": false,
+            "content": ["{Agent:StalePoemsBake@content}"]
+          },
+          "label": "Message",
+          "name": "回复消息_0"
+        },
+        "dragging": false,
+        "id": "Message:ManyKidsHide",
+        "measured": { "height": 85, "width": 200 },
+        "position": { "x": 697.69, "y": 197.37 },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      }
+    ],
+    "edges": [
+      {
+        "id": "xy-edge__beginstart-Invoke:ImageSearchend",
+        "markerEnd": "logo",
+        "source": "begin",
+        "sourceHandle": "start",
+        "target": "Invoke:ImageSearch",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": { "isHovered": false },
+        "id": "xy-edge__Invoke:ImageSearchstart-Agent:StalePoemsBakeend",
+        "markerEnd": "logo",
+        "source": "Invoke:ImageSearch",
+        "sourceHandle": "start",
+        "target": "Agent:StalePoemsBake",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": { "isHovered": false },
+        "id": "xy-edge__Agent:StalePoemsBakestart-Message:ManyKidsHideend",
+        "markerEnd": "logo",
+        "source": "Agent:StalePoemsBake",
+        "sourceHandle": "start",
+        "target": "Message:ManyKidsHide",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      }
+    ]
+  },
+  "globals": {
+    "sys.conversation_turns": 0,
+    "sys.date": "",
+    "sys.files": [],
+    "sys.history": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "variables": {}
+}
