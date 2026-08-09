@@ -130,13 +130,25 @@ def search_by_vector(
     Chroma 默认用 L2 距离（平方欧几里得）。对 L2 归一化的 CLIP 向量：
         L2_distance = 2 × (1 - 余弦相似度)
         余弦相似度 = 1 - L2_distance / 2
+
+    容错：若缓存的 collection 句柄已失效（被外部索引脚本删除重建），
+    清除 lru_cache 并重试一次，避免 InvalidCollectionException。
     """
-    collection = get_image_collection()
-    results = collection.query(
-        query_embeddings=[embedding],
-        n_results=top_k,
-        where=where,
-    )
+    try:
+        collection = get_image_collection()
+        results = collection.query(
+            query_embeddings=[embedding],
+            n_results=top_k,
+            where=where,
+        )
+    except Exception:
+        get_image_collection.cache_clear()
+        collection = get_image_collection()
+        results = collection.query(
+            query_embeddings=[embedding],
+            n_results=top_k,
+            where=where,
+        )
     ids = results["ids"][0] if results["ids"] else []
     distances = results["distances"][0] if results["distances"] else []
     metadatas = results["metadatas"][0] if results["metadatas"] else []
@@ -156,8 +168,16 @@ def category_filter(category: str) -> dict:
 
 
 def count_images() -> int:
-    """当前 collection 中的图片向量数量（用于健康检查 / 评测）。"""
-    return get_image_collection().count()
+    """当前 collection 中的图片向量数量（用于健康检查 / 评测）。
+
+    容错：若缓存的 collection 句柄已失效（被外部脚本删除），
+    清除 lru_cache 并重新获取，避免 InvalidCollectionException。
+    """
+    try:
+        return get_image_collection().count()
+    except Exception:
+        get_image_collection.cache_clear()
+        return get_image_collection().count()
 
 
 def get_by_ids(image_ids: list[str]) -> dict[str, dict]:
@@ -174,8 +194,13 @@ def get_by_ids(image_ids: list[str]) -> dict[str, dict]:
     # 合并后存在重复 ID，Chroma 的 get() 不接受重复 ID 会抛 DuplicateIDError
     seen = set()
     unique_ids = [iid for iid in image_ids if not (iid in seen or seen.add(iid))]
-    collection = get_image_collection()
-    results = collection.get(ids=unique_ids)
+    try:
+        collection = get_image_collection()
+        results = collection.get(ids=unique_ids)
+    except Exception:
+        get_image_collection.cache_clear()
+        collection = get_image_collection()
+        results = collection.get(ids=unique_ids)
     return {
         id_: meta for id_, meta in zip(results.get("ids", []), results.get("metadatas", []))
     }
