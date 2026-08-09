@@ -35,6 +35,8 @@ transformers>=4.44.0,<4.47.0
 Pillow>=10.0.0
 # requests：调用智谱文件解析 API（PDF 插图提取）+ 下载解析结果 ZIP
 requests>=2.31.0
+# openpyxl：读取 DataSet 的 xlsx 文物著录数据（import_dataset.py 用）
+openpyxl>=3.1.0
 # ===== 开发依赖 =====
 # pytest：单元测试框架
 pytest>=8.0.0

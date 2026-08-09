@@ -8,6 +8,8 @@ services:
     volumes:
       # 数据持久化：重启容器不丢索引和图片
       - ./data:/app/data
+      # DataSet 真实数据挂载（只读，import_dataset.py 读取 xlsx 和图片源）
+      - ./DataSet:/app/DataSet:ro
       # HuggingFace 模型缓存持久化：避免每次重启容器都重新下载 Chinese-CLIP（约 400MB）
       # 容器内 root 用户的 HF 缓存默认在 /root/.cache/huggingface
       - hf_cache:/root/.cache/huggingface

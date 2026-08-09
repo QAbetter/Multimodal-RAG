@@ -97,6 +97,19 @@ def _apply_relic_metadata(image: ImageMetadata, relic: RelicMetadata) -> None:
         image.tags = list(image.tags) + structured_tags
 
 
+def _has_relic_metadata(image: ImageMetadata) -> bool:
+    """检查注册时是否已注入文博元数据（来自 dataset_metadata.json）。
+
+    有任一结构化字段即认为已有元数据，可跳过 GLM-4V 调用。
+    用于 index_image 和 batch_index_images 判断是否需要调 GLM-4V 提取标签。
+    """
+    return any([
+        image.dynasty, image.material, image.category_top,
+        image.category_sub, image.craft, image.relic_condition,
+        image.color_feature, image.function_usage,
+    ])
+
+
 def _images_registry_path() -> Path:
     """图片注册表路径：data/processed/images.json，与书籍的 books.json 同级。"""
     settings = get_settings()
@@ -207,6 +220,18 @@ def batch_register_images(
             caption=item.get("caption"),
             pdf_source=item.get("pdf_source"),
             page_number=item.get("page_number"),
+            # 支持直接注入文博字段（来自 dataset_metadata.json，跳过 GLM-4V）
+            dynasty=item.get("dynasty"),
+            material=item.get("material"),
+            category_top=item.get("category_top"),
+            category_sub=item.get("category_sub"),
+            craft=item.get("craft"),
+            relic_condition=item.get("relic_condition"),
+            color_feature=item.get("color_feature"),
+            function_usage=item.get("function_usage"),
+            caption_standard=item.get("caption_standard"),
+            caption_public=item.get("caption_public"),
+            pattern_theme=item.get("pattern_theme") or [],
         )
 
     # 1. 并行计算 MD5 + 尺寸（I/O bound）
@@ -258,11 +283,23 @@ def index_image(image_id: str) -> ImageMetadata:
     abs_path = Path(settings.image_storage_dir) / image.file_path
 
     try:
-        # 1. 文博元数据提取（若注册时未手动指定 tags）—— 锁外执行（GLM-4V API 耗时）
+        # 1. 文博元数据提取（若注册时未手动指定 tags 且未注入文博字段）—— 锁外执行（GLM-4V API 耗时）
         #    一次调用同时产出：结构化字段 + tags + caption
-        if not image.tags:
+        if not image.tags and not _has_relic_metadata(image):
             relic_meta = extract_relic_metadata(str(abs_path))
             _apply_relic_metadata(image, relic_meta)
+        elif not image.tags and _has_relic_metadata(image):
+            # 已有结构化字段（来自 dataset_metadata.json），跳过 GLM-4V
+            # 补一步：用已有字段生成命名空间标签（如"朝代:唐"），写入 tags
+            structured_tags = structured_fields_to_tags(
+                dynasty=image.dynasty, material=image.material,
+                category_sub=image.category_sub, craft=image.craft,
+                function_usage=image.function_usage,
+                relic_condition=image.relic_condition,
+                color_feature=image.color_feature,
+            )
+            if structured_tags:
+                image.tags = list(image.tags) + structured_tags
 
         # 2. 预处理 + CLIP 向量化 —— 锁外执行（模型前向耗时）
         with registry_lock:
@@ -343,8 +380,12 @@ def batch_index_images(
         for image_id in image_ids:
             if image_id not in images:
                 raise ValueError(f"图片未注册: {image_id}")
-        # 筛选需要提取标签的图片（已有标签的跳过）
-        need_tags = [iid for iid in image_ids if not images[iid].tags]
+        # 筛选需要提取标签的图片：
+        # - 已有 tags（来自 dataset_metadata.json 的名称标签或手动指定）→ 跳过
+        # - 已有文博结构化字段（dynasty/material 等）→ 跳过，阶段1.5 补结构化标签
+        # - 两者都没有 → 调 GLM-4V 提取
+        need_tags = [iid for iid in image_ids
+                     if not images[iid].tags and not _has_relic_metadata(images[iid])]
         # 标记状态
         for iid in need_tags:
             images[iid].status = ImageStatus.EXTRACTING_TAGS
@@ -378,6 +419,36 @@ def batch_index_images(
             for image_id, relic_meta in tag_results.items():
                 if image_id in images:
                     _apply_relic_metadata(images[image_id], relic_meta)
+            save_registered_images(images)
+
+    # ===== 阶段 1.5：对跳过 GLM-4V 的图片，用已有结构化字段生成命名空间标签 =====
+    # 这批图片注册时已注入 dynasty/material 等字段（来自 dataset_metadata.json），
+    # 跳过了阶段1 的 GLM-4V 调用，但 tags 可能只有名称标签或为空，
+    # 这里用 structured_fields_to_tags 生成 "朝代:唐" 格式标签追加到 tags。
+    with registry_lock:
+        images = load_registered_images()
+        changed = False
+        for iid in image_ids:
+            img = images.get(iid)
+            if img is None:
+                continue
+            # 已有命名空间标签（含冒号）说明已生成过结构化标签，跳过避免重复追加
+            if any(":" in t for t in img.tags):
+                continue
+            # 没有任何文博结构化字段，无法生成命名空间标签，跳过
+            if not _has_relic_metadata(img):
+                continue
+            structured_tags = structured_fields_to_tags(
+                dynasty=img.dynasty, material=img.material,
+                category_sub=img.category_sub, craft=img.craft,
+                function_usage=img.function_usage,
+                relic_condition=img.relic_condition,
+                color_feature=img.color_feature,
+            )
+            if structured_tags:
+                img.tags = list(img.tags) + structured_tags
+                changed = True
+        if changed:
             save_registered_images(images)
 
     # ===== 阶段 2：分批 CLIP 向量化 + 写入 =====
