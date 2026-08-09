@@ -196,8 +196,10 @@ def import_anyang(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
         caption = "。".join(caption_parts)
 
         # 从"图片链接_保存位置"提取文件名
+        # 注意：xlsx 里是 Windows 路径（如 D:\八爪鱼下载\xxx.jpeg），
+        # 在 Linux 服务器上跑时 Path 不认反斜杠，需先统一为正斜杠再取 basename
         save_path = str(row["图片链接_保存位置"]) if pd.notna(row["图片链接_保存位置"]) else ""
-        img_filename = Path(save_path).name if save_path else ""
+        img_filename = Path(save_path.replace("\\", "/")).name if save_path else ""
 
         # 名称作为标签 + 从名称提取器型
         name_tags = build_name_tags(name)
