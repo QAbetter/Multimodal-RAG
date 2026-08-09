@@ -33,10 +33,17 @@ def load_and_preprocess(file_path: str) -> Image.Image:
 
 
 def get_image_size(file_path: str) -> tuple[int, int]:
-    """获取原图宽高（EXIF 修正后），用于元数据记录。"""
-    img = Image.open(file_path)
-    img = ImageOps.exif_transpose(img)
-    return img.size  # (width, height)
+    """获取原图宽高（EXIF 修正后），用于元数据记录。
+
+    损坏图片返回 (0, 0)，不抛异常，避免批量索引中断。
+    """
+    try:
+        img = Image.open(file_path)
+        img = ImageOps.exif_transpose(img)
+        return img.size  # (width, height)
+    except Exception as e:
+        print(f"[!] 无法读取图片尺寸 {file_path}: {e}")
+        return (0, 0)
 
 
 def generate_thumbnail(file_path: str, thumb_dir: str, image_id: str) -> str:

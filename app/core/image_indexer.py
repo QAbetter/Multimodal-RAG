@@ -203,11 +203,18 @@ def batch_register_images(
 
     settings = get_settings()
 
-    def _compute_one(item: dict) -> ImageMetadata:
-        """单张图片的 MD5 + 尺寸计算（线程池内并行执行）。"""
+    def _compute_one(item: dict) -> ImageMetadata | None:
+        """单张图片的 MD5 + 尺寸计算（线程池内并行执行）。
+
+        损坏图片返回 None，由调用方过滤，避免后续 CLIP 向量化失败。
+        """
         abs_path = Path(settings.image_storage_dir) / item["file_path"]
         image_id = compute_image_id(str(abs_path))
         width, height = get_image_size(str(abs_path))
+        # 损坏图片（PIL 读不了）跳过，避免后续 CLIP 向量化中断
+        if width == 0 and height == 0:
+            print(f"[!] 跳过损坏图片: {item['file_path']}")
+            return None
         return ImageMetadata(
             image_id=image_id,
             product_id=item["product_id"],
@@ -234,9 +241,13 @@ def batch_register_images(
             pattern_theme=item.get("pattern_theme") or [],
         )
 
-    # 1. 并行计算 MD5 + 尺寸（I/O bound）
+    # 1. 并行计算 MD5 + 尺寸（I/O bound），过滤掉损坏图片（返回 None）
     with ThreadPoolExecutor(max_workers=8) as pool:
-        computed = list(pool.map(_compute_one, items))
+        computed_raw = list(pool.map(_compute_one, items))
+    computed = [img for img in computed_raw if img is not None]
+    skipped_corrupted = len(computed_raw) - len(computed)
+    if skipped_corrupted > 0:
+        print(f"[!] 共 {skipped_corrupted} 张损坏图片已跳过")
 
     # 2. 筛选 + 串行更新注册表，只读写 1 次
     registered: list[ImageMetadata] = []
