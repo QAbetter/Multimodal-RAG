@@ -201,6 +201,190 @@ def simple_import_museum(
     return metadata
 
 
+def xlsx_name_import_museum(
+    src_dir: Path,
+    dst_raw: Path,
+    museum_name: str,
+    xlsx_filename: str,
+    id_prefix: str,
+    name_col: str = "文物名称",
+    intro_col: str | None = "介绍",
+    dynasty_col: str | None = None,
+    material_col: str | None = None,
+    category_top_col: str | None = None,
+    extra_caption_cols: list[str] | None = None,
+    img_filename_col: str | None = None,
+    name_as_image_filename: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """通用 xlsx 名称+介绍导入器：读 xlsx 名称列，rglob 在子目录查找同名图片。
+
+    适用于"xlsx 只有文物名称（和介绍/描述）"的博物馆：
+    - 仪征博物馆（文物名称/介绍）
+    - 莆田博物馆（文物名称/介绍，无图片）
+    - 华侨博物院（标题/大小/描述，图片列全 NaN）
+    - 懿品博悟（名称/年代/博物馆/简介/...，图片列全 NaN）
+
+    Args:
+        name_col: 文物名称所在列名
+        intro_col: 介绍/描述列名（作为 caption 主体），None 表示无
+        dynasty_col: 年代列名（如懿品博悟有），None 表示无
+        material_col: 材质列名，None 表示无
+        category_top_col: 一级分类列名，None 表示无
+        extra_caption_cols: 额外拼到 caption 的列名列表（如大小、纹样介绍）
+        img_filename_col: 图片文件名列（如苏州戏曲的"图片名称"），
+            None 表示用文物名称作为图片文件名查找
+        name_as_image_filename: True=用 name_col 内容查找图片文件
+            （需配合 img_filename_col=None 或同时使用）
+    """
+    import pandas as pd
+
+    xlsx_path = src_dir / xlsx_filename
+    df = pd.read_excel(xlsx_path)
+
+    metadata = {}
+    total = 0
+    copied = 0
+    products_with_images: set[str] = set()
+    orphan_products: set[str] = set()
+
+    for idx, row in df.iterrows():
+        name = str(row[name_col]).strip() if pd.notna(row.get(name_col)) else ""
+        if not name:
+            continue
+
+        product_id = f"{id_prefix}_{idx + 1:03d}"
+
+        # 构造 caption：name + 介绍 + 额外列
+        caption_parts = [name]
+        if intro_col and intro_col in df.columns and pd.notna(row.get(intro_col)):
+            caption_parts.append(str(row[intro_col]).strip())
+        if extra_caption_cols:
+            for col in extra_caption_cols:
+                if col in df.columns and pd.notna(row.get(col)):
+                    val = str(row[col]).strip()
+                    if val:
+                        caption_parts.append(val)
+
+        metadata[product_id] = build_relic_metadata(
+            name=name,
+            museum=museum_name,
+            dynasty=str(row[dynasty_col]).strip() if dynasty_col and dynasty_col in df.columns and pd.notna(row.get(dynasty_col)) else None,
+            material=str(row[material_col]).strip() if material_col and material_col in df.columns and pd.notna(row.get(material_col)) else None,
+            category_top=str(row[category_top_col]).strip() if category_top_col and category_top_col in df.columns and pd.notna(row.get(category_top_col)) else None,
+            extra_caption_parts=caption_parts[1:],  # name 已在 build_relic_metadata 内加入
+        )
+
+        # 确定要查找的图片文件名
+        # 优先用 img_filename_col，其次用 name_as_image_filename
+        img_filename = ""
+        if img_filename_col and img_filename_col in df.columns and pd.notna(row.get(img_filename_col)):
+            img_filename = str(row[img_filename_col]).strip()
+        elif name_as_image_filename:
+            img_filename = f"{name}.jpg"  # 尝试常见扩展名
+
+        if img_filename:
+            metadata[product_id]["source_file"] = img_filename
+
+        # rglob 查找图片（尝试多种扩展名）
+        has_img = False
+        if img_filename:
+            # 先尝试精确匹配文件名
+            stem = Path(img_filename).stem if "." in img_filename else img_filename
+            for ext in [".jpg", ".jpeg", ".png", ".webp", ".JPG", ".JPEG"]:
+                matched = list(src_dir.rglob(f"{stem}{ext}"))
+                if matched:
+                    src_img = matched[0]
+                    dst_img = dst_raw / museum_name / product_id / src_img.name
+                    total += 1
+                    if not dry_run:
+                        if copy_image_if_changed(src_img, dst_img):
+                            copied += 1
+                    else:
+                        copied += 1
+                    has_img = True
+                    break
+
+        if has_img:
+            products_with_images.add(product_id)
+        else:
+            orphan_products.add(product_id)
+
+    # 过滤孤儿记录
+    orphan_count = len(orphan_products)
+    if orphan_count > 0:
+        metadata = {pid: meta for pid, meta in metadata.items() if pid in products_with_images}
+        print(f"[{museum_name}] 元数据 {len(metadata)} 条（xlsx 有 {len(metadata) + orphan_count} 条，"
+              f"磁盘缺图 {orphan_count} 条已过滤），图片 {total} 张"
+              f"{'（复制 ' + str(copied) + ' 张变化）' if copied != total else ''}")
+    else:
+        suffix = f"（复制 {copied} 张变化）" if copied != total else ""
+        print(f"[{museum_name}] 元数据 {len(metadata)} 条，图片 {total} 张{suffix}")
+    return metadata
+
+
+def category_subdir_import_museum(
+    src_dir: Path,
+    dst_raw: Path,
+    museum_name: str,
+    id_prefix: str,
+    category_to_top: dict[str, str] | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """通用类别子目录导入器：无 xlsx，遍历子目录，文件名作为文物名。
+
+    适用于"无 xlsx，图片按类别分目录存放，文件名即文物名"的博物馆：
+    - 李白纪念馆（书画/其他/古籍文献/碑刻）
+    - 株洲博物馆（瓷器/陶器/铜器/玉器/金银器/铁器/石器/木/复合器）
+    - 青白江博物馆（玉器/石器/青铜器/瓷器/陶器/其他）
+
+    Args:
+        category_to_top: 子目录名 → 一级分类映射（如 {"书画": "书画", "瓷器": "陶瓷器"}）。
+            None 表示用子目录名直接作为 category_top。
+    """
+    metadata = {}
+    total = 0
+    copied = 0
+
+    for subdir in sorted(src_dir.iterdir()):
+        if not subdir.is_dir():
+            continue
+        # 跳过隐藏目录和 xlsx 文件
+        if subdir.name.startswith("."):
+            continue
+
+        category_top = category_to_top.get(subdir.name, subdir.name) if category_to_top else subdir.name
+
+        for img in sorted(subdir.iterdir()):
+            if img.suffix.lower() not in IMAGE_EXTS:
+                continue
+            # 文件名（去扩展名）作为文物名
+            name = img.stem
+            if not name:
+                continue
+
+            product_id = f"{id_prefix}_{total + 1:04d}"
+
+            metadata[product_id] = build_relic_metadata(
+                name=name,
+                museum=museum_name,
+                category_top=category_top,
+            )
+            metadata[product_id]["source_file"] = img.name
+
+            dst_img = dst_raw / museum_name / product_id / img.name
+            total += 1
+            if not dry_run:
+                if copy_image_if_changed(img, dst_img):
+                    copied += 1
+            else:
+                copied += 1
+
+    suffix = f"（复制 {copied} 张变化）" if copied != total else ""
+    print(f"[{museum_name}] 元数据 {len(metadata)} 条，图片 {total} 张{suffix}")
+    return metadata
+
+
 # ========== 增量导入支持 ==========
 
 def load_import_state() -> dict:
