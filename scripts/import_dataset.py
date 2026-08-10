@@ -30,11 +30,13 @@ IMPORTERS_PACKAGE = "scripts.importers"
 def discover_importers() -> dict[str, object]:
     """自动发现 scripts/importers/ 下的所有导入器模块。
 
-    约定：每个模块需定义 MUSEUM_NAME（博物馆名，对应 DataSet/ 下的目录名）
+    两个来源：
+    1. importers/*.py（手写导入器，优先级高）
+    2. importers/museums_config.py（配置驱动，简单型博物馆）
+
+    约定：每个导入器需定义 MUSEUM_NAME（博物馆名，对应 DataSet/ 下的目录名）
     和 import_museum(src_dir, dst_raw, dry_run) 函数。
     以 _ 开头的模块（如 _template）会被跳过。
-
-    用文件系统路径直接加载模块，不依赖 scripts 是 Python 包。
 
     Returns: {MUSEUM_NAME: module}
     """
@@ -51,11 +53,11 @@ def discover_importers() -> dict[str, object]:
             spec.loader.exec_module(pkg)
             import sys
             sys.modules["scripts.importers"] = pkg
-    # 扫描 importers/ 下的 .py 文件
+    # 扫描 importers/ 下的 .py 文件（手写导入器，优先级高）
     for py_file in sorted(importers_dir.glob("*.py")):
         name = py_file.stem
-        if name.startswith("_"):
-            continue  # 跳过 _template 等
+        if name.startswith("_") or name == "museums_config":
+            continue  # 跳过 _template / museums_config / detect_unconfigured
         spec = importlib.util.spec_from_file_location(f"scripts.importers.{name}", py_file)
         if spec and spec.loader:
             module = importlib.util.module_from_spec(spec)
@@ -63,6 +65,11 @@ def discover_importers() -> dict[str, object]:
             museum_name = getattr(module, "MUSEUM_NAME", None)
             if museum_name and hasattr(module, "import_museum"):
                 importers[museum_name] = module
+    # 加载配置驱动的导入器（同名时 .py 优先，不覆盖）
+    from scripts.importers import load_config_importers
+    for name, mod in load_config_importers().items():
+        if name not in importers:
+            importers[name] = mod
     return importers
 
 
@@ -83,8 +90,13 @@ def main():
     if args.list:
         print(f"可用导入器（{len(importers)} 个）：")
         for name, mod in importers.items():
-            xlsx = getattr(mod, "XLSX_FILENAME", "?")
-            print(f"  {name}  ←  {mod.__name__}  (xlsx: {xlsx})")
+            mod_name = getattr(mod, "__name__", "配置")
+            xlsx_files = getattr(mod, "XLSX_FILES", None)
+            if xlsx_files:
+                xlsx_str = ", ".join(xlsx_files)
+            else:
+                xlsx_str = getattr(mod, "XLSX_FILENAME", None) or "无"
+            print(f"  {name}  ←  {mod_name}  (xlsx: {xlsx_str})")
         return
 
     # 导入增量支持函数
@@ -125,14 +137,26 @@ def main():
 
         # xlsx 路径
         xlsx_filename = getattr(module, "XLSX_FILENAME", None)
-        xlsx_path = src / xlsx_filename if xlsx_filename else None
+        xlsx_files = getattr(module, "XLSX_FILES", None)  # 多 xlsx 列表
 
         # 增量判断：xlsx 未变化且非 --force 则跳过
-        if not args.force and not args.dry_run and xlsx_path:
-            if not is_xlsx_changed(museum_name, xlsx_path, state):
-                print(f"[跳过] {museum_name}（xlsx 未变化，保留已有数据）")
-                skipped += 1
-                continue
+        if not args.force and not args.dry_run:
+            if xlsx_files:
+                # 多 xlsx：任一变化则重新导入
+                changed = any(
+                    is_xlsx_changed(f"{museum_name}/{xf}", src / xf, state)
+                    for xf in xlsx_files if (src / xf).exists()
+                )
+                if not changed:
+                    print(f"[跳过] {museum_name}（所有 xlsx 未变化，保留已有数据）")
+                    skipped += 1
+                    continue
+            elif xlsx_filename:
+                xlsx_path = src / xlsx_filename
+                if not is_xlsx_changed(museum_name, xlsx_path, state):
+                    print(f"[跳过] {museum_name}（xlsx 未变化，保留已有数据）")
+                    skipped += 1
+                    continue
 
         # 删除旧 metadata 中该博物馆的记录（重新导入会覆盖）
         # 用 museum 字段过滤，避免旧 product_id 残留
@@ -147,8 +171,16 @@ def main():
         imported += 1
 
         # 记录本次导入状态
-        if not args.dry_run and xlsx_path:
-            record_import_state(museum_name, xlsx_path, state)
+        if not args.dry_run:
+            if xlsx_files:
+                for xf in xlsx_files:
+                    xf_path = src / xf
+                    if xf_path.exists():
+                        record_import_state(f"{museum_name}/{xf}", xf_path, state)
+            elif xlsx_filename:
+                xlsx_path = src / xlsx_filename
+                if xlsx_path.exists():
+                    record_import_state(museum_name, xlsx_path, state)
 
     # 保存元数据 JSON（合并后的全量 metadata）
     if not args.dry_run:

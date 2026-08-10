@@ -109,43 +109,81 @@ def simple_import_museum(
     xlsx_filename: str,
     id_prefix: str,
     dry_run: bool = False,
+    name_col: str | None = None,
+    dynasty_col: str | None = None,
+    intro_col: str | None = None,
+    category_col: str | None = None,
+    size_col: str | None = None,
+    path_col: str | None = None,
+    strip_prefix: bool = True,
 ) -> dict:
-    """通用简单导入器：适用于"只有标题+图片"的博物馆。
+    """通用简单导入器：xlsx 有名称列 + 图片路径列，可提取结构化字段。
 
-    这类博物馆的 xlsx 共同特征：
-    - "标题"列 = 文物名称
-    - "图片_保存位置"列 = Windows 路径（含文件名）
-    - 图片在 src_dir 下的某个子目录（图片/ 或 {时间戳}/图片/）
+    支持多种列名：name_col 指定名称列（默认"标题"，常见还有"定名"、"名称"），
+    path_col 指定图片保存路径列（默认自动查找"图片_保存位置"/"图片链接_保存位置"等）。
 
-    本函数自动递归查找图片，无需关心图片在哪个子目录。
-    product_id 用 {id_prefix}_{序号:03d} 格式，避免跨博物馆冲突。
+    可选提取字段：dynasty_col（年代）、intro_col（简介）、category_col（类别）、
+    size_col（尺寸）。某些博物馆的字段值带前缀（如"年代：清"），strip_prefix=True 时自动去除。
 
-    适用于：福州市林则徐纪念馆、聂荣臻元帅网、苏州丝绸博物馆、金华市博物馆 等。
+    图片查找：从 path_col 的路径提取文件名，在 src_dir 下 rglob 查找。
 
     Args:
-        museum_name: 博物馆名（对应 DataSet/ 下的目录名）
-        xlsx_filename: xlsx 文件名
-        id_prefix: product_id 前缀（如"林则徐"、"聂荣臻"），避免与其他博物馆冲突
+        name_col: 名称列名，None 则自动选"标题"或第一列
+        dynasty_col: 年代列名（如"年代"/"朝代"/"时代"），None 则不提取
+        intro_col: 介绍列名（如"简介"/"描述"/"textellipsis"/"bd_con_c"），None 则不提取
+        category_col: 类别列名（如"类别"/"分类"/"文物类型"），None 则不提取
+        size_col: 尺寸列名，None 则不提取（拼入 caption）
+        path_col: 图片保存路径列名，None 则自动查找
+        strip_prefix: True=去除字段值的前缀（如"年代：清"→"清"）
     """
     import pandas as pd
+    import re
 
     xlsx_path = src_dir / xlsx_filename
     df = pd.read_excel(xlsx_path)
 
-    # "标题"列必须存在，"图片_保存位置"列可能叫不同名字
-    title_col = "标题" if "标题" in df.columns else df.columns[0]
-    path_col = None
-    for candidate in ["图片_保存位置", "图片保存位置", "图片路径"]:
-        if candidate in df.columns:
-            path_col = candidate
-            break
-    if path_col is None:
-        # 取最后一列作为路径（多数情况是图片路径）
-        path_col = df.columns[-1]
+    # 确定 name_col
+    if name_col and name_col in df.columns:
+        title_col = name_col
+    elif "标题" in df.columns:
+        title_col = "标题"
+    else:
+        title_col = df.columns[0]
+
+    # 确定 path_col（图片保存位置）
+    if path_col and path_col in df.columns:
+        pass
+    else:
+        path_col = None
+        for candidate in ["图片_保存位置", "图片保存位置", "图片路径",
+                          "图片链接_保存位置", "图片链接1_保存位置",
+                          "图片链接1_保存位置", "二维_保存位置",
+                          "字段1_保存位置", "字段1_保存位置",
+                          "资源文件路径"]:
+            if candidate in df.columns:
+                path_col = candidate
+                break
+        if path_col is None:
+            path_col = df.columns[-1]
+
+    def _strip(val: str) -> str | None:
+        """去除字段值前缀（如'年代：清'→'清'）并清理。"""
+        if not val:
+            return None
+        val = val.strip()
+        if strip_prefix:
+            # 去除"xxx："或"xxx:"前缀
+            val = re.sub(r'^[^：:]{1,6}[：:]', '', val).strip()
+        return val if val else None
+
+    def _get(row, col: str | None) -> str | None:
+        if col and col in df.columns and pd.notna(row.get(col)):
+            return _strip(str(row[col]))
+        return None
 
     metadata = {}
-    total = 0       # 匹配到的图片总数
-    copied = 0      # 实际复制的图片数（内容有变化的）
+    total = 0
+    copied = 0
     products_with_images: set[str] = set()
     orphan_products: set[str] = set()
 
@@ -156,21 +194,32 @@ def simple_import_museum(
 
         product_id = f"{id_prefix}_{idx + 1:03d}"
 
-        # 从"图片_保存位置"提取文件名（处理 Windows 路径在 Linux 上的问题）
-        save_path = str(row[path_col]) if pd.notna(row[path_col]) else ""
-        img_filename = Path(save_path.replace("\\", "/")).name if save_path else ""
+        # 提取结构化字段
+        dynasty = _get(row, dynasty_col)
+        intro = _get(row, intro_col)
+        category = _get(row, category_col)
+        size = _get(row, size_col)
+
+        # caption 组成：name + size + intro
+        caption_parts = [p for p in [size, intro] if p]
 
         metadata[product_id] = build_relic_metadata(
             name=name,
             museum=museum_name,
+            dynasty=dynasty,
+            category_top=category,
+            extra_caption_parts=caption_parts if caption_parts else None,
         )
+
+        # 从路径列提取文件名
+        save_path = str(row[path_col]) if pd.notna(row[path_col]) else ""
+        img_filename = Path(save_path.replace("\\", "/")).name if save_path else ""
         if img_filename:
             metadata[product_id]["source_file"] = img_filename
 
-        # 在 src_dir 下递归查找图片文件
+        # rglob 查找图片
         has_img = False
         if img_filename:
-            # rglob 查找匹配文件名（不区分大小写）
             matched = list(src_dir.rglob(img_filename))
             if matched:
                 src_img = matched[0]
@@ -180,7 +229,7 @@ def simple_import_museum(
                     if copy_image_if_changed(src_img, dst_img):
                         copied += 1
                 else:
-                    copied += 1  # dry-run 模式下假设全部需要复制
+                    copied += 1
                 has_img = True
 
         if has_img:
@@ -189,6 +238,103 @@ def simple_import_museum(
             orphan_products.add(product_id)
 
     # 过滤孤儿记录
+    orphan_count = len(orphan_products)
+    if orphan_count > 0:
+        metadata = {pid: meta for pid, meta in metadata.items() if pid in products_with_images}
+        print(f"[{museum_name}] 元数据 {len(metadata)} 条（xlsx 有 {len(metadata) + orphan_count} 条，"
+              f"磁盘缺图 {orphan_count} 条已过滤），图片 {total} 张"
+              f"{'（复制 ' + str(copied) + ' 张变化）' if copied != total else ''}")
+    else:
+        suffix = f"（复制 {copied} 张变化）" if copied != total else ""
+        print(f"[{museum_name}] 元数据 {len(metadata)} 条，图片 {total} 张{suffix}")
+    return metadata
+
+
+def info_3d_import_museum(
+    src_dir: Path,
+    dst_raw: Path,
+    museum_name: str,
+    id_prefix: str,
+    xlsx_filename: str = "info.xlsx",
+    dry_run: bool = False,
+) -> dict:
+    """info.xlsx 标准 3D 格式导入器。
+
+    info.xlsx 列名固定：序号 | 分类 | 定名 | 尺寸 | 年代 | 简介 | 存储类型 | 备注 | 资源文件路径(以#分隔)
+    资源文件路径格式："images/001.jpg#images/obj.obj#..."，以#分隔多个文件，只取图片部分。
+
+    图片在 src_dir/resource/ 目录下（或 src_dir/ 下其他目录），文件名为序号（如 001.jpg）。
+
+    适用于：中国南海博物馆、天水市博物馆、广东中国客家博物馆、广东海上丝绸之路博物馆 等。
+    """
+    import pandas as pd
+
+    xlsx_path = src_dir / xlsx_filename
+    if not xlsx_path.exists():
+        print(f"[{museum_name}] info.xlsx 不存在，跳过")
+        return {}
+
+    df = pd.read_excel(xlsx_path)
+
+    metadata = {}
+    total = 0
+    copied = 0
+    products_with_images: set[str] = set()
+    orphan_products: set[str] = set()
+
+    for idx, row in df.iterrows():
+        name = str(row["定名"]).strip() if pd.notna(row.get("定名")) else ""
+        if not name:
+            continue
+
+        product_id = f"{id_prefix}_{idx + 1:03d}"
+
+        dynasty = str(row["年代"]).strip() if pd.notna(row.get("年代")) and row.get("年代") else None
+        category = str(row["分类"]).strip() if pd.notna(row.get("分类")) and row.get("分类") else None
+        size = str(row["尺寸"]).strip() if pd.notna(row.get("尺寸")) and row.get("尺寸") else None
+        intro = str(row["简介"]).strip() if pd.notna(row.get("简介")) and row.get("简介") else None
+
+        # 解析资源文件路径：以#分隔，只取图片
+        raw_path = str(row["资源文件路径"]) if pd.notna(row.get("资源文件路径")) else ""
+        img_files = []
+        for part in raw_path.split("#"):
+            part = part.strip()
+            if part and any(part.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp"]):
+                img_files.append(part)
+
+        caption_parts = [p for p in [size, intro] if p and p != "无"]
+        metadata[product_id] = build_relic_metadata(
+            name=name,
+            museum=museum_name,
+            dynasty=dynasty,
+            category_top=category,
+            extra_caption_parts=caption_parts if caption_parts else None,
+        )
+
+        # 查找图片：在 src_dir 下查找每个图片文件名
+        has_img = False
+        if img_files:
+            for img_rel in img_files:
+                img_name = Path(img_rel.replace("\\", "/")).name
+                matched = list(src_dir.rglob(img_name))
+                if matched:
+                    src_img = matched[0]
+                    dst_img = dst_raw / museum_name / product_id / src_img.name
+                    total += 1
+                    if not dry_run:
+                        if copy_image_if_changed(src_img, dst_img):
+                            copied += 1
+                    else:
+                        copied += 1
+                    has_img = True
+            if has_img:
+                metadata[product_id]["source_file"] = img_files[0].split("/")[-1]
+
+        if has_img:
+            products_with_images.add(product_id)
+        else:
+            orphan_products.add(product_id)
+
     orphan_count = len(orphan_products)
     if orphan_count > 0:
         metadata = {pid: meta for pid, meta in metadata.items() if pid in products_with_images}
@@ -603,5 +749,171 @@ def copy_image_if_changed(src: Path, dst: Path) -> bool:
         shutil.copy2(src, dst)
         return True
     return False
+
+
+# ========== 配置驱动导入 ==========
+
+def _inject_category_top(metadata: dict, category_top: str | None) -> None:
+    """多 xlsx 模式：把 file 级的 category_top 强制注入所有 metadata。"""
+    if category_top:
+        for m in metadata.values():
+            m["category_top"] = category_top
+
+
+def _make_config_import_museum(cfg: dict):
+    """根据一条配置 dict 生成 import_museum 闭包。
+
+    支持 simple / xlsx_name / category_subdir 三种 mode，
+    单 xlsx（cfg["xlsx"]）和多 xlsx（cfg["files"] 列表）。
+    多 xlsx 时每个 file 用 {id_prefix}_{文件stem} 作为子前缀，product_id 天然唯一。
+    """
+    import types
+    from pathlib import Path
+
+    mode = cfg["mode"]
+    name = cfg["name"]
+    id_prefix = cfg["id_prefix"]
+    files = cfg.get("files")  # 多 xlsx 列表，与 cfg["xlsx"] 二选一
+
+    # 收集 museum 级默认字段（可被 file 级覆盖）
+    def _field_kwargs(keys: list[str]) -> dict:
+        return {k: cfg[k] for k in keys if k in cfg}
+
+    if mode == "simple":
+        _keys = ["name_col", "dynasty_col", "intro_col", "category_col", "size_col",
+                 "path_col", "strip_prefix"]
+
+        def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
+            defaults = _field_kwargs(_keys)
+            if files:
+                all_meta = {}
+                for f in files:
+                    sub_prefix = f"{id_prefix}_{Path(f['xlsx']).stem}"
+                    f_kwargs = {**defaults}
+                    f_kwargs.update({k: f[k] for k in _keys if k in f})
+                    meta = simple_import_museum(
+                        src_dir=src_dir, dst_raw=dst_raw, museum_name=name,
+                        xlsx_filename=f["xlsx"], id_prefix=sub_prefix, dry_run=dry_run,
+                        **f_kwargs,
+                    )
+                    _inject_category_top(meta, f.get("category_top"))
+                    all_meta.update(meta)
+                print(f"[{name}] 多 xlsx 合并：{len(files)} 个文件，共 {len(all_meta)} 条")
+                return all_meta
+            return simple_import_museum(
+                src_dir=src_dir, dst_raw=dst_raw, museum_name=name,
+                xlsx_filename=cfg["xlsx"], id_prefix=id_prefix, dry_run=dry_run,
+                **defaults,
+            )
+        return import_museum
+
+    elif mode == "info_3d":
+        def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
+            if files:
+                all_meta = {}
+                for f in files:
+                    sub_prefix = f"{id_prefix}_{Path(f['xlsx']).stem}"
+                    meta = info_3d_import_museum(
+                        src_dir=src_dir, dst_raw=dst_raw, museum_name=name,
+                        xlsx_filename=f["xlsx"], id_prefix=sub_prefix, dry_run=dry_run,
+                    )
+                    _inject_category_top(meta, f.get("category_top"))
+                    all_meta.update(meta)
+                print(f"[{name}] 多 xlsx 合并：{len(files)} 个文件，共 {len(all_meta)} 条")
+                return all_meta
+            return info_3d_import_museum(
+                src_dir=src_dir, dst_raw=dst_raw, museum_name=name,
+                xlsx_filename=cfg.get("xlsx", "info.xlsx"), id_prefix=id_prefix,
+                dry_run=dry_run,
+            )
+        return import_museum
+
+    elif mode == "xlsx_name":
+        _keys = ["name_col", "intro_col", "dynasty_col", "material_col",
+                 "category_top_col", "extra_caption_cols", "img_filename_col",
+                 "name_as_image_filename"]
+
+        def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
+            defaults = _field_kwargs(_keys)
+            if files:
+                all_meta = {}
+                for f in files:
+                    sub_prefix = f"{id_prefix}_{Path(f['xlsx']).stem}"
+                    # file 级字段覆盖 museum 级
+                    f_kwargs = {**defaults}
+                    f_kwargs.update({k: f[k] for k in _keys if k in f})
+                    meta = xlsx_name_import_museum(
+                        src_dir=src_dir, dst_raw=dst_raw, museum_name=name,
+                        xlsx_filename=f["xlsx"], id_prefix=sub_prefix,
+                        dry_run=dry_run, **f_kwargs,
+                    )
+                    _inject_category_top(meta, f.get("category_top"))
+                    all_meta.update(meta)
+                print(f"[{name}] 多 xlsx 合并：{len(files)} 个文件，共 {len(all_meta)} 条")
+                return all_meta
+            return xlsx_name_import_museum(
+                src_dir=src_dir, dst_raw=dst_raw, museum_name=name,
+                xlsx_filename=cfg["xlsx"], id_prefix=id_prefix,
+                dry_run=dry_run, **defaults,
+            )
+        return import_museum
+
+    elif mode == "category_subdir":
+        def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
+            return category_subdir_import_museum(
+                src_dir=src_dir, dst_raw=dst_raw, museum_name=name,
+                id_prefix=id_prefix,
+                category_to_top=cfg.get("category_to_top"),
+                dry_run=dry_run,
+            )
+        return import_museum
+
+    else:
+        raise ValueError(f"未知的 mode: {mode}（博物馆: {name}）")
+
+
+def load_config_importers() -> dict[str, object]:
+    """从 museums_config.py 加载配置驱动的导入器。
+
+    为每条配置生成一个虚拟模块（types.SimpleNamespace），
+    带 MUSEUM_NAME / XLSX_FILENAME / XLSX_FILES / import_museum 属性，
+    与 discover_importers 的 .py 扫描结果格式一致。
+
+    Returns: {MUSEUM_NAME: virtual_module}
+    """
+    import types
+    from pathlib import Path
+
+    try:
+        # museums_config.py 与本文件同目录，直接用文件路径加载避免包导入问题
+        cfg_path = Path(__file__).parent / "museums_config.py"
+        if not cfg_path.exists():
+            return {}
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("scripts.importers.museums_config", cfg_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception as e:
+        print(f"[配置] 加载 museums_config.py 失败: {e}")
+        return {}
+
+    importers = {}
+    for cfg in mod.MUSEUMS:
+        name = cfg["name"]
+        files = cfg.get("files")
+        if files:
+            xlsx_files = [f["xlsx"] for f in files]
+            xlsx_filename = xlsx_files[0]  # --list 显示用
+        else:
+            xlsx_files = None
+            xlsx_filename = cfg.get("xlsx")
+
+        virtual = types.SimpleNamespace()
+        virtual.MUSEUM_NAME = name
+        virtual.XLSX_FILENAME = xlsx_filename
+        virtual.XLSX_FILES = xlsx_files  # 多 xlsx 列表，用于增量判断
+        virtual.import_museum = _make_config_import_museum(cfg)
+        importers[name] = virtual
+    return importers
 
 
