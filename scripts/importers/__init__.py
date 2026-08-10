@@ -201,6 +201,61 @@ def simple_import_museum(
     return metadata
 
 
+def extract_xlsx_embedded_images(xlsx_path: Path) -> dict[int, bytes]:
+    """从 xlsx 提取内嵌图片，返回 {行号(0-indexed): 图片bytes}。
+
+    Excel 单元格内嵌的图片存在 xl/media/imageN.jpeg，
+    通过 xl/drawings/drawing1.xml 的 anchor 记录图片锚定的行号，
+    通过 xl/drawings/_rels/drawing1.xml.rels 的 rId 关联到 media 文件。
+
+    适用于 xlsx "图片"列是内嵌图片（pandas 读为 NaN）的情况：
+    - 华侨博物院：图片列是单元格内嵌缩略图
+    - 懿品博悟：图片列是单元格内嵌图片
+    """
+    import re
+    import zipfile
+
+    if not xlsx_path.exists():
+        return {}
+
+    with zipfile.ZipFile(xlsx_path) as z:
+        names = z.namelist()
+
+        # 找 drawing 文件
+        drawing_files = [n for n in names if n.startswith("xl/drawings/drawing") and n.endswith(".xml")]
+        if not drawing_files:
+            return {}
+
+        # 解析所有 rels 文件：rId → media 路径
+        rid_to_media: dict[str, str] = {}
+        for df in drawing_files:
+            rels_path = df.replace("xl/drawings/", "xl/drawings/_rels/") + ".rels"
+            if rels_path in names:
+                rels = z.read(rels_path).decode("utf-8")
+                for m in re.finditer(r'Id="(rId\d+)"[^>]*Target="\.\./(media/[^"]+)"', rels):
+                    rid_to_media[m.group(1)] = m.group(2)
+
+        if not rid_to_media:
+            return {}
+
+        # 解析 drawing：行号 → rId
+        row_to_image: dict[int, bytes] = {}
+        for df in drawing_files:
+            drawing = z.read(df).decode("utf-8")
+            # 匹配 <xdr:from>...<xdr:row>N</xdr:row>...</xdr:from> ... r:embed="rIdXXX"
+            anchors = re.findall(
+                r'<xdr:from>.*?<xdr:row>(\d+)</xdr:row>.*?</xdr:from>.*?r:embed="(rId\d+)"',
+                drawing, re.DOTALL
+            )
+            for row_str, rid in anchors:
+                row = int(row_str)
+                media_path = rid_to_media.get(rid)
+                if media_path and f"xl/{media_path}" in names:
+                    row_to_image[row] = z.read(f"xl/{media_path}")
+
+        return row_to_image
+
+
 def xlsx_name_import_museum(
     src_dir: Path,
     dst_raw: Path,
