@@ -254,7 +254,8 @@ def search_by_text(
     # 把 query 本身也加入标签路：索引端 tags 存的是完整文物名（如"黄缎地柿蒂孔雀纹织成襕袍"），
     # 查询端用完整 query 去标签路检索能精确命中，不依赖 parse_structured_tags 的结构化解析
     query_as_tag = [query.strip()] if query.strip() else []
-    effective_tags = list(tags) + structured_tags + query_as_tag if (tags or structured_tags or query_as_tag) else []
+    user_tags = list(tags) if tags else []
+    effective_tags = user_tags + structured_tags + query_as_tag if (user_tags or structured_tags or query_as_tag) else []
 
     # 判断是否启用混合检索：有 tags 或有 caption 索引
     has_caption_index = get_caption_stats().get("caption_indexed", 0) > 0
