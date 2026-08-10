@@ -220,7 +220,10 @@ def simple_import_museum(
         # rglob 查找图片
         has_img = False
         if img_filename:
-            matched = list(src_dir.rglob(img_filename))
+            try:
+                matched = list(src_dir.rglob(img_filename))
+            except OSError:
+                matched = []  # 文件名过长等异常，跳过
             if matched:
                 src_img = matched[0]
                 dst_img = dst_raw / museum_name / product_id / src_img.name
@@ -584,7 +587,10 @@ def xlsx_name_import_museum(
             # 先尝试精确匹配文件名
             stem = Path(img_filename).stem if "." in img_filename else img_filename
             for ext in [".jpg", ".jpeg", ".png", ".webp", ".JPG", ".JPEG"]:
-                matched = list(src_dir.rglob(f"{stem}{ext}"))
+                try:
+                    matched = list(src_dir.rglob(f"{stem}{ext}"))
+                except OSError:
+                    matched = []  # 文件名过长等异常，跳过
                 if matched:
                     src_img = matched[0]
                     dst_img = dst_raw / museum_name / product_id / src_img.name
