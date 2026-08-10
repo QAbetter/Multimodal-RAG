@@ -140,6 +140,25 @@ FIELD_NAMESPACE: dict[str, str] = {
 # 写入端：结构化字段 → 命名空间标签
 # ===========================================================================
 
+def normalize_dynasty(dynasty: str | None) -> str | None:
+    """归一化朝代值，如 '清康熙' → '清'，'清晚期' → '清'，'唐代' → '唐'。
+
+    写入端调用：把 GLM-4/importer 产出的原始 dynasty 值归一化为标准值，
+    确保与查询端 parse_structured_tags 解析出的标签一致。
+    原始值仍保留在 caption 中供 BM25 精确匹配（如"清康熙"作为关键词命中）。
+
+    遍历 _DYNASTY_ALIASES，若原始值包含某别名则归一化为对应标准值。
+    未匹配的返回原值（如"红山文化"等非朝代值保持不变）。
+    """
+    if not dynasty or not dynasty.strip():
+        return dynasty
+    value = dynasty.strip()
+    for canonical, aliases in _DYNASTY_ALIASES.items():
+        if any(alias in value for alias in aliases):
+            return canonical
+    return value
+
+
 def structured_fields_to_tags(
     dynasty: str | None = None,
     material: str | None = None,
@@ -156,12 +175,15 @@ def structured_fields_to_tags(
 
     空值跳过，不生成标签。
 
+    dynasty 会先经 normalize_dynasty 归一化（如"清康熙"→"清"），
+    确保写入端标签与查询端 parse_structured_tags 解析出的标准值一致。
+
     示例：
-        structured_fields_to_tags(dynasty="唐", material="青铜", craft="范铸法")
-        → ["朝代:唐", "材质:青铜", "工艺:范铸法"]
+        structured_fields_to_tags(dynasty="清康熙", material="青铜", craft="范铸法")
+        → ["朝代:清", "材质:青铜", "工艺:范铸法"]
     """
     fields = {
-        "dynasty": dynasty,
+        "dynasty": normalize_dynasty(dynasty) if dynasty else None,
         "material": material,
         "category_sub": category_sub,
         "craft": craft,

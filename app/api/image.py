@@ -390,6 +390,26 @@ def image_stats() -> dict:
     }
 
 
+@router.post("/reindex-bm25")
+def reindex_bm25() -> dict:
+    """重建图片 caption BM25 索引（进程内内存，从 images.json 重新加载）。
+
+    场景：batch_index_images.py 脚本在独立进程中运行，虽然 image_indexer
+    会调用 build_image_bm25，但那是脚本进程的内存，脚本退出后即丢失。
+    FastAPI 服务进程的 BM25 索引不会自动更新，需要调用此端点重建。
+
+    建议在 batch_index_images.py 完成后调用此端点，无需重启服务。
+    """
+    from app.core.image_bm25_store import get_caption_stats, reset_image_bm25, warm_up
+
+    reset_image_bm25()
+    warm_up()
+    return {
+        "status": "ok",
+        "captions": get_caption_stats(),
+    }
+
+
 @router.get("/{image_id}")
 def get_image_info(image_id: str) -> dict:
     """查询图片元数据（索引状态、标签等）。"""
