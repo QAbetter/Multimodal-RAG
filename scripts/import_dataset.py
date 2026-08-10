@@ -72,6 +72,9 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="只预览不实际复制")
     parser.add_argument("--list", action="store_true", help="列出所有可用导入器")
     parser.add_argument("--force", action="store_true", help="强制全量重跑（忽略增量状态，所有博物馆都重新导入）")
+    parser.add_argument("--skip-enrich", action="store_true",
+                        help="跳过 GLM-4 文本模型补全结构化字段（默认导入后自动补全 dynasty/material 等）")
+    parser.add_argument("--enrich-workers", type=int, default=4, help="enrich 阶段并发数（默认 4）")
     args = parser.parse_args()
 
     # 加载导入器
@@ -150,6 +153,17 @@ def main():
     # 保存元数据 JSON（合并后的全量 metadata）
     if not args.dry_run:
         metadata_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 导入完成后，自动用 GLM-4 文本模型补全"只有名字"的文物结构化字段
+        # 对 dynasty+material 为空的条目调 GLM-4 推断，已有字段的跳过（不重复调 API）
+        # 补全的字段会生成命名空间标签（如"朝代:唐"），写入 tags 一起落盘
+        if not args.skip_enrich:
+            print("\n--- 元数据补全（GLM-4 文本模型）---")
+            from scripts.enrich_name_only_metadata import enrich_metadata_batch
+            enrich_metadata_batch(all_metadata, workers=args.enrich_workers, verbose=True)
+        else:
+            print("[跳过] 元数据补全（--skip-enrich）")
+
         metadata_path.write_text(json.dumps(all_metadata, ensure_ascii=False, indent=2), encoding="utf-8")
         save_import_state(state)
 

@@ -131,6 +131,118 @@ def enrich_one(product_id: str, name: str, llm: ChatOpenAI) -> dict | None:
         return None
 
 
+def _regenerate_tags(metadata: dict) -> None:
+    """对有结构化字段的条目重新生成 tags（名称标签 + 命名空间标签）。
+
+    在 enrich 补全字段后调用：把补全的 dynasty/material/craft 等字段
+    转为 "朝代:唐" 格式标签，追加到 tags 列表，让标签路能精确命中。
+
+    只处理 is_name_only=False（已有结构化字段）的条目；
+    补全失败的条目（仍为 is_name_only=True）保留原 tags 不动。
+    """
+    try:
+        from scripts.importers import build_name_tags, extract_ware_type
+    except ImportError:
+        return
+
+    from app.core.cultural_relic_aliases import structured_fields_to_tags
+    for pid, meta in metadata.items():
+        if is_name_only(meta):
+            continue  # 没有结构化字段，跳过
+        name = meta.get("name", "")
+        new_tags = list(build_name_tags(name))
+        struct_tags = structured_fields_to_tags(
+            dynasty=meta.get("dynasty"),
+            material=meta.get("material"),
+            category_sub=meta.get("category_sub") or extract_ware_type(name),
+            craft=meta.get("craft"),
+            function_usage=meta.get("function_usage"),
+            relic_condition=meta.get("relic_condition"),
+            color_feature=meta.get("color_feature"),
+        )
+        new_tags.extend(struct_tags)
+        meta["tags"] = new_tags
+        if not meta.get("category_sub"):
+            meta["category_sub"] = extract_ware_type(name)
+
+
+def enrich_metadata_batch(
+    metadata: dict,
+    workers: int = 4,
+    verbose: bool = True,
+    force: bool = False,
+) -> tuple[int, int]:
+    """对 metadata dict 中 dynasty+material 为空的条目批量调 GLM-4 补全。
+
+    原地修改 metadata dict：补全 dynasty/material/category_top 等字段，
+    并重新生成 tags（含命名空间标签）。
+
+    已有 dynasty 或 material 的条目会被 needs_enrichment 跳过，不重复调 API
+    （force=True 时强制全部重新补全）。
+    补全失败的条目保留原状（tags 不动）。
+
+    供 import_dataset.py 在导入完成后自动调用，也可被 main() 复用。
+
+    Args:
+        metadata: {product_id: {name, dynasty, material, ...}}（原地修改）
+        workers: 并发数
+        verbose: 打印进度
+        force: 强制补全所有条目（包括已有 dynasty/material 的）
+
+    Returns: (success_count, fail_count)
+    """
+    if force:
+        to_enrich = [(pid, meta) for pid, meta in metadata.items()]
+    else:
+        to_enrich = [(pid, meta) for pid, meta in metadata.items() if needs_enrichment(meta)]
+
+    if not to_enrich:
+        if verbose:
+            print("[enrich] 无需补全（所有条目已有 dynasty/material）")
+        return 0, 0
+
+    if verbose:
+        print(f"[enrich] 开始补全 {len(to_enrich)} 条（{workers} 并发）...")
+
+    llm = get_enrich_llm()
+    success_count = 0
+    fail_count = 0
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        future_to_pid = {
+            pool.submit(enrich_one, pid, meta.get("name", ""), llm): pid
+            for pid, meta in to_enrich
+        }
+        for i, future in enumerate(as_completed(future_to_pid), 1):
+            pid = future_to_pid[future]
+            try:
+                result = future.result()
+                if result:
+                    for k, v in result.items():
+                        if v and str(v).strip():
+                            metadata[pid][k] = str(v).strip()
+                    success_count += 1
+                    if verbose and (i <= 5 or i % 20 == 0):
+                        name = metadata[pid].get("name", "")
+                        print(f"  [{i}/{len(to_enrich)}] {pid} ({name}): "
+                              f"朝代={result.get('dynasty', '?')}, "
+                              f"材质={result.get('material', '?')}, "
+                              f"类别={result.get('category_top', '?')}")
+                else:
+                    fail_count += 1
+            except Exception as e:
+                if verbose:
+                    print(f"  [!] {pid}: 异常 - {e}")
+                fail_count += 1
+
+    # 重新生成 tags（含命名空间标签）
+    _regenerate_tags(metadata)
+
+    if verbose:
+        print(f"[enrich] 完成: 成功 {success_count} 条, 失败 {fail_count} 条")
+    return success_count, fail_count
+
+
 def main():
     parser = argparse.ArgumentParser(description="用 GLM-4 文本模型从文物名字补全结构化字段")
     parser.add_argument("--dry-run", action="store_true", help="只预览，不写入 metadata.json")
@@ -147,87 +259,18 @@ def main():
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     print(f"元数据总计: {len(metadata)} 条")
 
-    # 筛选需要补全的文物（dynasty 和 material 同时为空的条目）
+    # 统计待补全数量
     if args.force:
-        to_enrich = [(pid, meta) for pid, meta in metadata.items()]
-        print(f"强制模式: 全部 {len(to_enrich)} 条需要补全")
+        print(f"强制模式: 全部 {len(metadata)} 条需要补全")
     else:
-        to_enrich = [(pid, meta) for pid, meta in metadata.items() if needs_enrichment(meta)]
-        enrich_count = len(to_enrich)
-        already_count = len(metadata) - enrich_count
+        enrich_count = sum(1 for m in metadata.values() if needs_enrichment(m))
         print(f"  需补全（dynasty+material 为空）: {enrich_count} 条")
-        print(f"  已有 dynasty/material: {already_count} 条（跳过）")
+        print(f"  已有 dynasty/material: {len(metadata) - enrich_count} 条（跳过）")
 
-    if not to_enrich:
-        print("\n[完成] 无需补全")
-        return
-
-    print(f"\n开始补全 {len(to_enrich)} 条（{args.workers} 并发）...")
-    llm = get_enrich_llm()
-
-    success_count = 0
-    fail_count = 0
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        future_to_pid = {
-            pool.submit(enrich_one, pid, meta.get("name", ""), llm): pid
-            for pid, meta in to_enrich
-        }
-        for i, future in enumerate(as_completed(future_to_pid), 1):
-            pid = future_to_pid[future]
-            name = metadata[pid].get("name", "")
-            try:
-                result = future.result()
-                if result:
-                    # 补全字段写回 metadata
-                    for k, v in result.items():
-                        if v and str(v).strip():
-                            metadata[pid][k] = str(v).strip()
-                    # 重新生成 tags 和 category_sub（用 build_relic_metadata 的逻辑）
-                    # category_sub 重新提取（如果补全了 dynasty/material 等）
-                    success_count += 1
-                    if i <= 5 or i % 20 == 0:
-                        print(f"  [{i}/{len(to_enrich)}] {pid} ({name}): "
-                              f"朝代={result.get('dynasty', '?')}, "
-                              f"材质={result.get('material', '?')}, "
-                              f"类别={result.get('category_top', '?')}")
-                else:
-                    fail_count += 1
-            except Exception as e:
-                print(f"  [!] {pid} ({name}): 异常 - {e}")
-                fail_count += 1
-
-    print(f"\n补全完成: 成功 {success_count} 条, 失败 {fail_count} 条")
-
-    # 对补全成功的文物，重新生成 tags（加入结构化命名空间标签）
-    # 借用 importers 的工具函数
-    try:
-        from scripts.importers import build_name_tags, extract_ware_type
-        has_enrich_tools = True
-    except ImportError:
-        has_enrich_tools = False
-
-    if has_enrich_tools:
-        from app.core.cultural_relic_aliases import structured_fields_to_tags
-        for pid, meta in metadata.items():
-            if not is_name_only(meta):
-                # 已有结构化字段，重新生成 tags
-                name = meta.get("name", "")
-                new_tags = list(build_name_tags(name))
-                # 从结构化字段生成命名空间标签
-                struct_tags = structured_fields_to_tags(
-                    dynasty=meta.get("dynasty"),
-                    material=meta.get("material"),
-                    category_sub=meta.get("category_sub") or extract_ware_type(name),
-                    craft=meta.get("craft"),
-                    function_usage=meta.get("function_usage"),
-                    relic_condition=meta.get("relic_condition"),
-                    color_feature=meta.get("color_feature"),
-                )
-                new_tags.extend(struct_tags)
-                meta["tags"] = new_tags
-                # 更新 category_sub（如果之前是 None）
-                if not meta.get("category_sub"):
-                    meta["category_sub"] = extract_ware_type(name)
+    # 调用核心函数补全（原地修改 metadata）
+    success, fail = enrich_metadata_batch(
+        metadata, workers=args.workers, verbose=True, force=args.force
+    )
 
     # 写回 metadata.json
     if not args.dry_run:
