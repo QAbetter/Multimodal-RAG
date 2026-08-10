@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import build_relic_metadata
+from . import build_relic_metadata, copy_image_if_changed
 
 MUSEUM_NAME = "安阳博物馆"
 XLSX_FILENAME = "青铜器_安博藏品_安阳博物馆.xlsx"
@@ -27,7 +27,8 @@ def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
 
     resource_dir = src_dir / "resource"
     metadata = {}
-    count = 0
+    total = 0
+    copied = 0
     products_with_images: set[str] = set()
     orphan_products: set[str] = set()
 
@@ -60,11 +61,13 @@ def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
         if img_filename:
             src_img = resource_dir / img_filename
             if src_img.exists():
-                dst_img_dir = dst_raw / MUSEUM_NAME / product_id
+                dst_img = dst_raw / MUSEUM_NAME / product_id / src_img.name
+                total += 1
                 if not dry_run:
-                    dst_img_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src_img, dst_img_dir / src_img.name)
-                count += 1
+                    if copy_image_if_changed(src_img, dst_img):
+                        copied += 1
+                else:
+                    copied += 1
                 has_img = True
 
         if has_img:
@@ -76,8 +79,10 @@ def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
     orphan_count = len(orphan_products)
     if orphan_count > 0:
         metadata = {pid: meta for pid, meta in metadata.items() if pid in products_with_images}
+        suffix = f"（复制 {copied} 张变化）" if copied != total else ""
         print(f"[{MUSEUM_NAME}] 元数据 {len(metadata)} 条（xlsx 有 {len(metadata) + orphan_count} 条，"
-              f"磁盘缺图 {orphan_count} 条已过滤），复制图片 {count} 张")
+              f"磁盘缺图 {orphan_count} 条已过滤），图片 {total} 张{suffix}")
     else:
-        print(f"[{MUSEUM_NAME}] 元数据 {len(metadata)} 条，复制图片 {count} 张")
+        suffix = f"（复制 {copied} 张变化）" if copied != total else ""
+        print(f"[{MUSEUM_NAME}] 元数据 {len(metadata)} 条，图片 {total} 张{suffix}")
     return metadata

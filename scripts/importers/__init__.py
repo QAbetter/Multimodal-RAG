@@ -8,7 +8,14 @@
 
 新增博物馆只需在 importers/ 下新建 .py 文件，实现 MUSEUM_NAME + import_museum() 即可，
 主脚本 import_dataset.py 会自动发现并调用。
+
+增量导入支持：
+- load_import_state / save_import_state：记录每个博物馆 xlsx 的修改时间，
+  下次运行时跳过未变化的博物馆（--force 可强制重跑）
+- copy_image_if_changed：只在源图片内容变化时才复制，避免不必要的目标 mtime 更新
 """
+import hashlib
+import json
 import sys
 from pathlib import Path
 
@@ -18,6 +25,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from app.core.cultural_relic_aliases import _WARE_TYPE_ALIASES
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+# 导入状态文件路径（记录每个博物馆 xlsx 的 mtime，用于增量导入判断）
+STATE_FILE = Path("data/processed/import_state.json")
 
 
 def extract_ware_type(name: str) -> str | None:
@@ -117,7 +127,6 @@ def simple_import_museum(
         xlsx_filename: xlsx 文件名
         id_prefix: product_id 前缀（如"林则徐"、"聂荣臻"），避免与其他博物馆冲突
     """
-    import shutil
     import pandas as pd
 
     xlsx_path = src_dir / xlsx_filename
@@ -135,7 +144,8 @@ def simple_import_museum(
         path_col = df.columns[-1]
 
     metadata = {}
-    count = 0
+    total = 0       # 匹配到的图片总数
+    copied = 0      # 实际复制的图片数（内容有变化的）
     products_with_images: set[str] = set()
     orphan_products: set[str] = set()
 
@@ -164,11 +174,13 @@ def simple_import_museum(
             matched = list(src_dir.rglob(img_filename))
             if matched:
                 src_img = matched[0]
-                dst_img_dir = dst_raw / museum_name / product_id
+                dst_img = dst_raw / museum_name / product_id / src_img.name
+                total += 1
                 if not dry_run:
-                    dst_img_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src_img, dst_img_dir / src_img.name)
-                count += 1
+                    if copy_image_if_changed(src_img, dst_img):
+                        copied += 1
+                else:
+                    copied += 1  # dry-run 模式下假设全部需要复制
                 has_img = True
 
         if has_img:
@@ -181,8 +193,99 @@ def simple_import_museum(
     if orphan_count > 0:
         metadata = {pid: meta for pid, meta in metadata.items() if pid in products_with_images}
         print(f"[{museum_name}] 元数据 {len(metadata)} 条（xlsx 有 {len(metadata) + orphan_count} 条，"
-              f"磁盘缺图 {orphan_count} 条已过滤），复制图片 {count} 张")
+              f"磁盘缺图 {orphan_count} 条已过滤），图片 {total} 张"
+              f"{'（复制 ' + str(copied) + ' 张变化）' if copied != total else ''}")
     else:
-        print(f"[{museum_name}] 元数据 {len(metadata)} 条，复制图片 {count} 张")
+        suffix = f"（复制 {copied} 张变化）" if copied != total else ""
+        print(f"[{museum_name}] 元数据 {len(metadata)} 条，图片 {total} 张{suffix}")
     return metadata
+
+
+# ========== 增量导入支持 ==========
+
+def load_import_state() -> dict:
+    """加载导入状态（记录每个博物馆 xlsx 的 mtime + size）。
+
+    状态文件：data/processed/import_state.json
+    格式：{museum_name: {"xlsx_mtime": float, "xlsx_size": int}}
+
+    用于增量导入：如果 xlsx 的 mtime+size 未变，则跳过该博物馆重新导入。
+    """
+    if STATE_FILE.exists():
+        try:
+            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_import_state(state: dict) -> None:
+    """保存导入状态。"""
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def is_xlsx_changed(museum_name: str, xlsx_path: Path, state: dict) -> bool:
+    """判断博物馆的 xlsx 是否较上次导入有变化。
+
+    用 mtime + size 双重判断（mtime 可能因 touch 改变但内容没变，加 size 更可靠）。
+
+    Returns:
+        True = 有变化或首次导入，需要重新导入
+        False = 无变化，可跳过
+    """
+    if not xlsx_path.exists():
+        return False
+    stat = xlsx_path.stat()
+    key = f"{museum_name}"
+    prev = state.get(key)
+    if not prev:
+        return True  # 首次导入
+    return prev.get("xlsx_mtime") != stat.st_mtime or prev.get("xlsx_size") != stat.st_size
+
+
+def record_import_state(museum_name: str, xlsx_path: Path, state: dict) -> None:
+    """记录本次导入的 xlsx 状态。"""
+    if xlsx_path.exists():
+        stat = xlsx_path.stat()
+        state[museum_name] = {
+            "xlsx_mtime": stat.st_mtime,
+            "xlsx_size": stat.st_size,
+        }
+
+
+def copy_image_if_changed(src: Path, dst: Path) -> bool:
+    """只在源图片与目标不同时才复制（避免更新目标 mtime 触发不必要的重新索引）。
+
+    用文件大小快速判断 + MD5 精确判断（大小相同才算 MD5）。
+
+    Returns:
+        True = 已复制（内容有变化或目标不存在）
+        False = 跳过（内容相同）
+    """
+    import shutil
+
+    if not dst.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        return True
+
+    # 大小不同 → 内容肯定不同
+    if src.stat().st_size != dst.stat().st_size:
+        shutil.copy2(src, dst)
+        return True
+
+    # 大小相同 → 用 MD5 精确判断
+    def md5(p: Path) -> str:
+        h = hashlib.md5()
+        with open(p, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    if md5(src) != md5(dst):
+        shutil.copy2(src, dst)
+        return True
+    return False
+
 

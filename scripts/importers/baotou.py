@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import IMAGE_EXTS, build_relic_metadata
+from . import IMAGE_EXTS, build_relic_metadata, copy_image_if_changed
 
 MUSEUM_NAME = "包头博物馆"
 XLSX_FILENAME = "15020311800001内蒙古包头博物馆.xlsx"
@@ -48,7 +48,8 @@ def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
         )
 
     # 复制图片：data/images/raw/{博物馆}/{藏品编号}/
-    count = 0
+    total = 0
+    copied = 0
     products_with_images: set[str] = set()
     for product_id in metadata:
         src_img_dir = src_dir / product_id
@@ -60,9 +61,12 @@ def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
         has_img = False
         for img in src_img_dir.iterdir():
             if img.suffix.lower() in IMAGE_EXTS:
+                total += 1
                 if not dry_run:
-                    shutil.copy2(img, dst_img_dir / img.name)
-                count += 1
+                    if copy_image_if_changed(img, dst_img_dir / img.name):
+                        copied += 1
+                else:
+                    copied += 1
                 has_img = True
         if has_img:
             products_with_images.add(product_id)
@@ -71,8 +75,10 @@ def import_museum(src_dir: Path, dst_raw: Path, dry_run: bool = False) -> dict:
     orphan_count = len(metadata) - len(products_with_images)
     if orphan_count > 0:
         metadata = {pid: meta for pid, meta in metadata.items() if pid in products_with_images}
+        suffix = f"（复制 {copied} 张变化）" if copied != total else ""
         print(f"[{MUSEUM_NAME}] 元数据 {len(metadata)} 条（xlsx 有 {len(metadata) + orphan_count} 条，"
-              f"磁盘缺图 {orphan_count} 条已过滤），复制图片 {count} 张")
+              f"磁盘缺图 {orphan_count} 条已过滤），图片 {total} 张{suffix}")
     else:
-        print(f"[{MUSEUM_NAME}] 元数据 {len(metadata)} 条，复制图片 {count} 张")
+        suffix = f"（复制 {copied} 张变化）" if copied != total else ""
+        print(f"[{MUSEUM_NAME}] 元数据 {len(metadata)} 条，图片 {total} 张{suffix}")
     return metadata
