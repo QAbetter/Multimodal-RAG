@@ -910,6 +910,7 @@ def load_config_importers() -> dict[str, object]:
 
         virtual = types.SimpleNamespace()
         virtual.MUSEUM_NAME = name
+        virtual.SRC_SUBDIR = cfg.get("src_subdir", name)  # 实际数据目录名（默认=name）
         virtual.XLSX_FILENAME = xlsx_filename
         virtual.XLSX_FILES = xlsx_files  # 多 xlsx 列表，用于增量判断
         virtual.import_museum = _make_config_import_museum(cfg)

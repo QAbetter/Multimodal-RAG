@@ -130,9 +130,10 @@ def main():
     for museum_name, module in importers.items():
         if args.museum and args.museum != museum_name:
             continue
-        src = dataset_dir / museum_name
+        src_subdir = getattr(module, "SRC_SUBDIR", museum_name)
+        src = dataset_dir / src_subdir
         if not src.exists():
-            print(f"[跳过] {museum_name} 目录不存在（DataSet/{museum_name}/）")
+            print(f"[跳过] {museum_name} 目录不存在（DataSet/{src_subdir}/）")
             continue
 
         # xlsx 路径

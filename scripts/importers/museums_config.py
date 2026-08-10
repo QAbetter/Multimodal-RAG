@@ -208,7 +208,7 @@ MUSEUMS = [
         "xlsx": "西安事变纪念馆陈列.xlsx",
     },
     {
-        "name": "云南博物馆",  # 云南省博物馆
+        "name": "云南省博物馆",
         "mode": "simple",
         "id_prefix": "云南",
         "xlsx": "云南省博物馆.xlsx",
@@ -226,7 +226,7 @@ MUSEUMS = [
         "intro_col": "文本5",
     },
     {
-        "name": "四川博物馆",  # 四川博物院
+        "name": "四川博物院",
         "mode": "simple",
         "id_prefix": "四川",
         "xlsx": "四川博物院.xlsx",
@@ -255,7 +255,7 @@ MUSEUMS = [
         "size_col": "字段2",
     },
     {
-        "name": "贵州博物馆",  # 贵州省博物馆
+        "name": "贵州省博物馆",
         "mode": "simple",
         "id_prefix": "贵州",
         "xlsx": "贵州省博物馆.xlsx",
@@ -301,6 +301,7 @@ MUSEUMS = [
     },
     {
         "name": "广东省博物馆-1",
+        "src_subdir": "广东省博物馆",
         "mode": "simple",
         "id_prefix": "广东1",
         "xlsx": "广东省博物馆.xlsx",
@@ -330,18 +331,21 @@ MUSEUMS = [
     },
     {
         "name": "桂林博物馆-梅瓶",
+        "src_subdir": "桂林博物馆",
         "mode": "simple",
         "id_prefix": "桂林梅瓶",
         "xlsx": "梅瓶-桂林博物馆.xlsx",
     },
     {
         "name": "桂林博物馆-书画",
+        "src_subdir": "桂林博物馆",
         "mode": "simple",
         "id_prefix": "桂林书画",
         "xlsx": "书画-桂林博物馆.xlsx",
     },
     {
         "name": "桂林博物馆-杂项",
+        "src_subdir": "桂林博物馆",
         "mode": "simple",
         "id_prefix": "桂林杂项",
         "xlsx": "杂项-桂林博物馆.xlsx",
@@ -349,6 +353,7 @@ MUSEUMS = [
     },
     {
         "name": "河南博物馆-青铜器",
+        "src_subdir": "河南博物馆",
         "mode": "simple",
         "id_prefix": "河南青铜",
         "xlsx": "青铜器.xlsx",
@@ -369,7 +374,8 @@ MUSEUMS = [
         "intro_col": "文物",
     },
     {
-        "name": "海口博物馆",  # 海南省博物馆的另一个表
+        "name": "海口博物馆",
+        "src_subdir": "海南省博物馆",
         "mode": "simple",
         "id_prefix": "海口",
         "xlsx": "海南省博物馆.xlsx(2).xlsx",
@@ -768,60 +774,6 @@ MUSEUMS = [
         "path_col": "图片链接_保存位置",
     },
     {
-        "name": "广州博物馆-3d",
-        "mode": "info_3d",
-        "id_prefix": "广州3d",
-        "xlsx": "info.xlsx",
-    },
-    {
-        "name": "广州艺术博物院-3d",
-        "mode": "info_3d",
-        "id_prefix": "广州艺术3d",
-        "xlsx": "info.xlsx",
-    },
-    {
-        "name": "广西民族博物馆-3d",
-        "mode": "info_3d",
-        "id_prefix": "广西民族3d",
-        "xlsx": "info.xlsx",
-    },
-    {
-        "name": "河北博物院-3d",
-        "mode": "info_3d",
-        "id_prefix": "河北3d",
-        "xlsx": "info.xlsx",
-    },
-    {
-        "name": "海南省博物馆-3d",
-        "mode": "info_3d",
-        "id_prefix": "海南3d",
-        "xlsx": "info.xlsx",
-    },
-    {
-        "name": "深圳博物馆-3d",
-        "mode": "info_3d",
-        "id_prefix": "深圳3d",
-        "xlsx": "info.xlsx",
-    },
-    {
-        "name": "贵州省博物馆-3d",
-        "mode": "info_3d",
-        "id_prefix": "贵州3d",
-        "xlsx": "info.xlsx",
-    },
-    {
-        "name": "遵义会议纪念馆-3d",
-        "mode": "info_3d",
-        "id_prefix": "遵义3d",
-        "xlsx": "info.xlsx",
-    },
-    {
-        "name": "郑州博物馆-3d",
-        "mode": "info_3d",
-        "id_prefix": "郑州3d",
-        "xlsx": "info.xlsx",
-    },
-    {
         "name": "鸦片战争博物馆",
         "mode": "info_3d",
         "id_prefix": "鸦片战争",
@@ -835,21 +787,10 @@ MUSEUMS = [
     },
     {
         "name": "孙中山故居纪念馆-民俗",
+        "src_subdir": "孙中山故居纪念馆",
         "mode": "simple",
         "id_prefix": "孙中山民俗",
         "xlsx": "民俗文物.xlsx",
-    },
-    {
-        "name": "孙中山故居纪念馆-3d",
-        "mode": "info_3d",
-        "id_prefix": "孙中山3d",
-        "xlsx": "info.xlsx",
-    },
-    {
-        "name": "河南博物馆-3d",
-        "mode": "info_3d",
-        "id_prefix": "河南3d",
-        "xlsx": "info.xlsx",
     },
 
     # --- 八爪鱼标题格式（标题 + 图片链接_保存位置，时间戳文件名） ---
@@ -881,23 +822,13 @@ MUSEUMS = [
     },
     {
         "name": "浙江省博物馆-古籍",
+        "src_subdir": "浙江省博物馆",
         "mode": "simple",
         "id_prefix": "浙江古籍",
         "xlsx": "浙江省博物馆-古籍图书.xlsx",
         "name_col": "标题",
         "dynasty_col": "版本年代",
         "intro_col": "版本类型",
-        "path_col": "URL_保存位置",
-    },
-    {
-        "name": "浙江省博物馆-3d",
-        "mode": "simple",
-        "id_prefix": "浙江3d",
-        "xlsx": "浙江省博物馆-3D文物.xlsx",
-        "name_col": "名称",
-        "dynasty_col": "年代",
-        "intro_col": "简介",
-        "size_col": "尺寸",
         "path_col": "URL_保存位置",
     },
     {
@@ -1067,6 +998,7 @@ MUSEUMS = [
     },
     {
         "name": "扬州博物馆-漆器",
+        "src_subdir": "扬州博物馆",
         "mode": "simple",
         "id_prefix": "扬州漆器",
         "xlsx": "扬州博物馆-漆器.xlsx",
@@ -1077,6 +1009,7 @@ MUSEUMS = [
     },
     {
         "name": "扬州博物馆-玉器",
+        "src_subdir": "扬州博物馆",
         "mode": "simple",
         "id_prefix": "扬州玉器",
         "xlsx": "扬州博物馆-玉器.xlsx",
@@ -1086,6 +1019,7 @@ MUSEUMS = [
     },
     {
         "name": "扬州博物馆-雕版",
+        "src_subdir": "扬州博物馆",
         "mode": "simple",
         "id_prefix": "扬州雕版",
         "xlsx": "扬州博物馆-雕版.xlsx",
@@ -1095,6 +1029,7 @@ MUSEUMS = [
     },
     {
         "name": "扬州博物馆-石刻砖瓦",
+        "src_subdir": "扬州博物馆",
         "mode": "simple",
         "id_prefix": "扬州石刻",
         "xlsx": "扬州博物馆-石刻砖瓦.xlsx",
@@ -1113,6 +1048,7 @@ MUSEUMS = [
     },
     {
         "name": "扬州博物馆-金属器",
+        "src_subdir": "扬州博物馆",
         "mode": "simple",
         "id_prefix": "扬州金属",
         "xlsx": "扬州博物馆-金属器.xlsx",
@@ -1132,6 +1068,7 @@ MUSEUMS = [
     },
     {
         "name": "无锡博物院-2",
+        "src_subdir": "无锡博物院",
         "mode": "simple",
         "id_prefix": "无锡2",
         "xlsx": "无锡博物院(2).xlsx",
@@ -1153,6 +1090,7 @@ MUSEUMS = [
     },
     {
         "name": "广东民间工艺博物馆-青瓷",
+        "src_subdir": "广东民间工艺博物馆",
         "mode": "simple",
         "id_prefix": "广东工艺青瓷",
         "xlsx": "广东民间工艺博物馆_青瓷.xlsx",
@@ -1161,6 +1099,7 @@ MUSEUMS = [
     },
     {
         "name": "广东民间工艺博物馆-广彩",
+        "src_subdir": "广东民间工艺博物馆",
         "mode": "simple",
         "id_prefix": "广东工艺广彩",
         "xlsx": "广东民间工艺博物馆_广彩.xlsx",
@@ -1169,6 +1108,7 @@ MUSEUMS = [
     },
     {
         "name": "广东民间工艺博物馆-广绣",
+        "src_subdir": "广东民间工艺博物馆",
         "mode": "simple",
         "id_prefix": "广东工艺广绣",
         "xlsx": "广东民间工艺博物馆_广绣.xlsx",
@@ -1177,6 +1117,7 @@ MUSEUMS = [
     },
     {
         "name": "广东民间工艺博物馆-彩瓷",
+        "src_subdir": "广东民间工艺博物馆",
         "mode": "simple",
         "id_prefix": "广东工艺彩瓷",
         "xlsx": "广东民间工艺博物馆_彩瓷.xlsx",
@@ -1187,6 +1128,7 @@ MUSEUMS = [
     },
     {
         "name": "广西壮族自治区博物馆-玉石器",
+        "src_subdir": "广西壮族自治区博物馆",
         "mode": "simple",
         "id_prefix": "广西玉器",
         "xlsx": "玉石器.xlsx",
@@ -1196,6 +1138,7 @@ MUSEUMS = [
     },
     {
         "name": "广西壮族自治区博物馆-书画",
+        "src_subdir": "广西壮族自治区博物馆",
         "mode": "simple",
         "id_prefix": "广西书画",
         "xlsx": "书画.xlsx",
@@ -1205,6 +1148,7 @@ MUSEUMS = [
     },
     {
         "name": "广西壮族自治区博物馆-陶瓷器",
+        "src_subdir": "广西壮族自治区博物馆",
         "mode": "simple",
         "id_prefix": "广西陶瓷",
         "xlsx": "陶瓷器.xlsx",
@@ -1214,6 +1158,7 @@ MUSEUMS = [
     },
     {
         "name": "广西壮族自治区博物馆-金属器",
+        "src_subdir": "广西壮族自治区博物馆",
         "mode": "simple",
         "id_prefix": "广西金属",
         "xlsx": "金属器.xlsx",
@@ -1223,6 +1168,7 @@ MUSEUMS = [
     },
     {
         "name": "广西壮族自治区博物馆-其他文物",
+        "src_subdir": "广西壮族自治区博物馆",
         "mode": "simple",
         "id_prefix": "广西其他",
         "xlsx": "其他文物.xlsx",
@@ -1232,6 +1178,7 @@ MUSEUMS = [
     },
     {
         "name": "安徽省博物院-数字藏品",
+        "src_subdir": "安徽博物院",
         "mode": "simple",
         "id_prefix": "安徽数字",
         "xlsx": "安徽博物院-数字藏品.xlsx",
@@ -1245,6 +1192,7 @@ MUSEUMS = [
     # ============================================================
     {
         "name": "故宫博物院-数字文物库",
+        "src_subdir": "故宫博物院",
         "mode": "simple",
         "id_prefix": "故宫",
         "name_col": "名称",
@@ -1261,6 +1209,7 @@ MUSEUMS = [
     },
     {
         "name": "故宫博物院-藏品",
+        "src_subdir": "故宫博物院",
         "mode": "simple",
         "id_prefix": "故宫藏品",
         "xlsx": "藏品 - 故宫博物院.xlsx",
@@ -1269,5 +1218,81 @@ MUSEUMS = [
         "intro_col": "简介",
         "category_col": "分类",
         "path_col": "图片链接_保存位置",
+    },
+
+    # ============================================================
+    # liwei/picture/ 下的博物馆（images.xlsx 标准 info 格式，11个 + 1个无xlsx）
+    # ============================================================
+    {
+        "name": "上海博物馆",
+        "mode": "info_3d",
+        "id_prefix": "上海",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "吉安县博物馆",
+        "mode": "info_3d",
+        "id_prefix": "吉安县",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "宝鸡青铜器博物院",
+        "mode": "info_3d",
+        "id_prefix": "宝鸡",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "山西博物院",
+        "mode": "info_3d",
+        "id_prefix": "山西",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "汉景帝阳陵博物馆",
+        "mode": "info_3d",
+        "id_prefix": "阳陵",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "浙江上虞中鑫建筑艺术博物馆",
+        "mode": "info_3d",
+        "id_prefix": "上虞中鑫",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "滕州市汉画像石馆",
+        "mode": "info_3d",
+        "id_prefix": "滕州汉画",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "秦始皇帝陵博物院",
+        "mode": "info_3d",
+        "id_prefix": "秦始皇帝陵",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "西安半坡博物馆",
+        "mode": "info_3d",
+        "id_prefix": "半坡",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "西安碑林博物馆",
+        "mode": "info_3d",
+        "id_prefix": "碑林",
+        "xlsx": "images.xlsx",
+    },
+    {
+        "name": "陕西历史博物馆",
+        "mode": "info_3d",
+        "id_prefix": "陕历博",
+        "xlsx": "images.xlsx",
+    },
+    # 奉节县夔州博物馆：无 xlsx，仅有图片子目录（展陈位置/发掘号）
+    {
+        "name": "奉节县夔州博物馆",
+        "mode": "category_subdir",
+        "id_prefix": "夔州",
     },
 ]
