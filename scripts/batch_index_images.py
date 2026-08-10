@@ -153,6 +153,9 @@ def run_incremental(raw_dir: Path, category: str | None, batch_size: int, tag_wo
             item["material"] = meta.get("material")
             item["category_top"] = meta.get("category_top")
             item["category_sub"] = meta.get("category_sub")
+            item["craft"] = meta.get("craft")
+            item["color_feature"] = meta.get("color_feature")
+            item["function_usage"] = meta.get("function_usage")
             item["relic_condition"] = meta.get("relic_condition")
             item["caption"] = meta.get("caption")
             # category 优先用 metadata 的 category_top（更准确）
@@ -248,6 +251,9 @@ def run_full(raw_dir: Path, category: str | None, batch_size: int, tag_workers: 
             item["material"] = meta.get("material")
             item["category_top"] = meta.get("category_top")
             item["category_sub"] = meta.get("category_sub")
+            item["craft"] = meta.get("craft")
+            item["color_feature"] = meta.get("color_feature")
+            item["function_usage"] = meta.get("function_usage")
             item["relic_condition"] = meta.get("relic_condition")
             item["caption"] = meta.get("caption")
             # category 优先用 metadata 的 category_top（更准确）
