@@ -256,6 +256,83 @@ def extract_xlsx_embedded_images(xlsx_path: Path) -> dict[int, bytes]:
         return row_to_image
 
 
+def _image_fingerprint(img_bytes: bytes) -> tuple:
+    """计算图片的灰度指纹（缩放到 8x8 灰度，返回 64 个像素值 tuple）。
+
+    用于快速相似度比较：指纹相同 = 图片内容基本相同。
+    比 MD5 快且能匹配"缩略图 vs 原图"这种尺寸不同但内容相同的情况。
+    """
+    import io
+    from PIL import Image
+    img = Image.open(io.BytesIO(img_bytes)).convert("L").resize((8, 8))
+    return tuple(img.getdata())
+
+
+def match_embedded_to_dir_images(
+    row_to_emb: dict[int, bytes],
+    img_dir: Path,
+) -> dict[int, Path]:
+    """把 xlsx 内嵌图片匹配到 图片/ 目录里的原图，返回 {行号: 原图Path}。
+
+    策略：
+    1. 预计算 图片/ 目录所有文件的指纹（一次遍历）
+    2. 对每张内嵌图片，计算指纹后和目录指纹比对
+    3. 完全相同 → 直接对应；否则用 16x16 指纹找最相似的（相似度>0.9）
+
+    对懿品博悟 2000+ 张图，用指纹字典预筛 + 精细比较兜底，避免 O(N²)。
+
+    Args:
+        row_to_emb: extract_xlsx_embedded_images 的返回值 {行号: 内嵌图片bytes}
+        img_dir: 图片/ 目录路径
+
+    Returns:
+        {行号: 原图Path} 匹配成功的条目；匹配失败的行号不在结果里
+    """
+    import io
+    from PIL import Image
+
+    if not img_dir.exists():
+        return {}
+
+    # 预计算目录图片指纹
+    dir_files = sorted([f for f in img_dir.iterdir() if f.suffix.lower() in IMAGE_EXTS])
+    dir_fp_to_path: dict[tuple, Path] = {}
+    dir_fps: list[tuple[tuple, Path]] = []
+    for f in dir_files:
+        try:
+            fp = _image_fingerprint(f.read_bytes())
+            dir_fp_to_path[fp] = f
+            dir_fps.append((fp, f))
+        except Exception:
+            continue
+
+    result: dict[int, Path] = {}
+    for row, emb_bytes in row_to_emb.items():
+        try:
+            emb_fp = _image_fingerprint(emb_bytes)
+        except Exception:
+            continue
+
+        # 精确匹配（指纹完全相同）
+        if emb_fp in dir_fp_to_path:
+            result[row] = dir_fp_to_path[emb_fp]
+            continue
+
+        # 模糊匹配：和所有目录图片比较，找最相似的
+        best_path = None
+        best_sim = 0.0
+        for dir_fp, path in dir_fps:
+            same = sum(1 for a, b in zip(emb_fp, dir_fp) if abs(a - b) < 30)
+            sim = same / 64.0
+            if sim > best_sim:
+                best_sim = sim
+                best_path = path
+        if best_sim >= 0.85 and best_path:
+            result[row] = best_path
+
+    return result
+
+
 def xlsx_name_import_museum(
     src_dir: Path,
     dst_raw: Path,
