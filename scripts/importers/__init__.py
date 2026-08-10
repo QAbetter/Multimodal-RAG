@@ -276,6 +276,13 @@ def info_3d_import_museum(
 
     df = pd.read_excel(xlsx_path)
 
+    # 列名兼容：资源文件路径列可能叫"资源文件路径"或"资源文件路径(以#分隔)"
+    path_col_name = None
+    for col in df.columns:
+        if "资源文件路径" in str(col):
+            path_col_name = col
+            break
+
     # 预建文件名到路径的索引，避免逐行 rglob（O(N) 而非 O(N×M)）
     name_to_path: dict[str, Path] = {}
     for f in src_dir.rglob("*"):
@@ -301,7 +308,9 @@ def info_3d_import_museum(
         intro = str(row["简介"]).strip() if pd.notna(row.get("简介")) and row.get("简介") else None
 
         # 解析资源文件路径：以#分隔，只取图片
-        raw_path = str(row["资源文件路径"]) if pd.notna(row.get("资源文件路径")) else ""
+        raw_path = ""
+        if path_col_name and pd.notna(row.get(path_col_name)):
+            raw_path = str(row[path_col_name])
         img_files = []
         for part in raw_path.split("#"):
             part = part.strip()
