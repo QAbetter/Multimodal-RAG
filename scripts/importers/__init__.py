@@ -271,10 +271,16 @@ def info_3d_import_museum(
 
     xlsx_path = src_dir / xlsx_filename
     if not xlsx_path.exists():
-        print(f"[{museum_name}] info.xlsx 不存在，跳过")
+        print(f"[{museum_name}] {xlsx_filename} 不存在，跳过")
         return {}
 
     df = pd.read_excel(xlsx_path)
+
+    # 预建文件名到路径的索引，避免逐行 rglob（O(N) 而非 O(N×M)）
+    name_to_path: dict[str, Path] = {}
+    for f in src_dir.rglob("*"):
+        if f.is_file() and f.suffix.lower() in IMAGE_EXTS:
+            name_to_path[f.name] = f
 
     metadata = {}
     total = 0
@@ -311,14 +317,13 @@ def info_3d_import_museum(
             extra_caption_parts=caption_parts if caption_parts else None,
         )
 
-        # 查找图片：在 src_dir 下查找每个图片文件名
+        # 查找图片：用预建索引查（O(1)），而非逐行 rglob
         has_img = False
         if img_files:
             for img_rel in img_files:
                 img_name = Path(img_rel.replace("\\", "/")).name
-                matched = list(src_dir.rglob(img_name))
-                if matched:
-                    src_img = matched[0]
+                src_img = name_to_path.get(img_name)
+                if src_img:
                     dst_img = dst_raw / museum_name / product_id / src_img.name
                     total += 1
                     if not dry_run:
@@ -624,39 +629,46 @@ def category_subdir_import_museum(
     total = 0
     copied = 0
 
-    for subdir in sorted(src_dir.iterdir()):
-        if not subdir.is_dir():
+    # 收集一级子目录名，用于确定 category_top
+    top_subdirs = {p.name: p for p in src_dir.iterdir() if p.is_dir() and not p.name.startswith(".")}
+
+    # 递归遍历所有图片，category_top 取一级子目录名
+    for img in sorted(src_dir.rglob("*")):
+        if not img.is_file() or img.suffix.lower() not in IMAGE_EXTS:
             continue
-        # 跳过隐藏目录和 xlsx 文件
-        if subdir.name.startswith("."):
+        # 文件名（去扩展名）作为文物名
+        name = img.stem
+        if not name:
             continue
 
-        category_top = category_to_top.get(subdir.name, subdir.name) if category_to_top else subdir.name
+        # 找出相对于 src_dir 的第一级子目录名
+        try:
+            rel = img.relative_to(src_dir)
+            first_part = rel.parts[0] if len(rel.parts) > 1 else None
+        except ValueError:
+            first_part = None
+        category_top = None
+        if first_part and category_to_top:
+            category_top = category_to_top.get(first_part, first_part)
+        elif first_part:
+            category_top = first_part
 
-        for img in sorted(subdir.iterdir()):
-            if img.suffix.lower() not in IMAGE_EXTS:
-                continue
-            # 文件名（去扩展名）作为文物名
-            name = img.stem
-            if not name:
-                continue
+        product_id = f"{id_prefix}_{total + 1:04d}"
 
-            product_id = f"{id_prefix}_{total + 1:04d}"
+        metadata[product_id] = build_relic_metadata(
+            name=name,
+            museum=museum_name,
+            category_top=category_top,
+        )
+        metadata[product_id]["source_file"] = img.name
 
-            metadata[product_id] = build_relic_metadata(
-                name=name,
-                museum=museum_name,
-                category_top=category_top,
-            )
-            metadata[product_id]["source_file"] = img.name
-
-            dst_img = dst_raw / museum_name / product_id / img.name
-            total += 1
-            if not dry_run:
-                if copy_image_if_changed(img, dst_img):
-                    copied += 1
-            else:
+        dst_img = dst_raw / museum_name / product_id / img.name
+        total += 1
+        if not dry_run:
+            if copy_image_if_changed(img, dst_img):
                 copied += 1
+        else:
+            copied += 1
 
     suffix = f"（复制 {copied} 张变化）" if copied != total else ""
     print(f"[{museum_name}] 元数据 {len(metadata)} 条，图片 {total} 张{suffix}")
