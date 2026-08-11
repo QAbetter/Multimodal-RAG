@@ -45,6 +45,8 @@ from app.core.locks import registry_lock
 from app.core.tag_extractor import extract_relic_metadata, RelicMetadata, _empty_metadata
 from app.core.tag_store import (
     add_image_tags,
+    batch_add_image_tags,
+    batch_remove_image_tags,
     remove_image_tags,
     reset_tag_index,
 )
@@ -495,7 +497,7 @@ def batch_index_images(
         # 2c. 批量删除旧向量（锁外执行）
         batch_delete_image_vectors(valid_ids)
 
-        # 2d. 逐张生成缩略图 + 组装写入数据（锁外执行，IO 耗时）
+        # 2d. 组装写入数据（跳过缩略图生成以加速；thumbnail_path 留空，检索时回退到原图）
         items = []
         with registry_lock:
             images = load_registered_images()
@@ -503,9 +505,8 @@ def batch_index_images(
                 if image_id not in images:
                     continue
                 image = images[image_id]
-                abs_path = Path(settings.image_storage_dir) / image.file_path
                 try:
-                    image.thumbnail_path = generate_thumbnail(str(abs_path), str(thumb_dir), image_id)
+                    # 跳过缩略图生成：thumbnail_path 留空，前端用 image_url 加载原图
                     items.append({"id": image_id, "embedding": vector, "metadata": image.to_payload()})
                     image.status = ImageStatus.READY
                     logger.info("图片索引完成: %s，标签=%s", image_id, image.tags[:3])
@@ -521,22 +522,38 @@ def batch_index_images(
             # 2f. 落盘注册表
             save_registered_images(images)
 
-        # 标签索引写入放到锁外（tag_store 自带 tag_index_lock）
-        # caption BM25 索引同样放锁外（image_bm25_store 自带 _lock）
-        for item in items:
-            image_id = item["id"]
-            # 重新读取最新的 tags 和 caption（避免引用已被其他线程修改的对象）
-            with registry_lock:
-                image = load_registered_images().get(image_id)
-                tags = list(image.tags) if image and image.tags else []
-                caption = image.caption if image else None
-            if tags:
-                remove_image_tags(image_id)
-                add_image_tags(image_id, tags)
-            # caption BM25 索引（PDF 提取的图片才有 caption）
+        # 2g. 批量写入标签索引 + caption BM25 索引（一次 load + save，比逐张快 N 倍）
+        # 先收集本批所有 image_id 的 tags 和 caption
+        batch_tag_items: list[tuple[str, list[str]]] = []
+        batch_bm25_items: list[tuple[str, str]] = []
+        batch_ids_for_remove: list[str] = []
+        with registry_lock:
+            images = load_registered_images()
+            for item in items:
+                image_id = item["id"]
+                image = images.get(image_id)
+                if image:
+                    tags = list(image.tags) if image.tags else []
+                    caption = image.caption
+                else:
+                    tags = []
+                    caption = None
+                batch_tag_items.append((image_id, tags))
+                batch_ids_for_remove.append(image_id)
+                if caption:
+                    batch_bm25_items.append((image_id, caption))
+
+        # 批量清理旧标签 + 批量写入新标签（2 次磁盘 IO 替代 2N 次）
+        if batch_ids_for_remove:
+            batch_remove_image_tags(batch_ids_for_remove)
+        if batch_tag_items:
+            batch_add_image_tags(batch_tag_items)
+
+        # 批量清理旧 BM25 + 批量构建新 BM25
+        for image_id, _ in batch_bm25_items:
             remove_image_bm25(image_id)
-            if caption:
-                build_image_bm25(image_id, caption)
+        for image_id, caption in batch_bm25_items:
+            build_image_bm25(image_id, caption)
 
     # 最终读取一次注册表返回结果
     with registry_lock:

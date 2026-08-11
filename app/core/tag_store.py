@@ -99,6 +99,60 @@ def add_image_tags(image_id: str, tags: list[str]) -> None:
     logger.debug("标签索引写入: %s → %s", image_id, tags)
 
 
+def batch_add_image_tags(items: list[tuple[str, list[str]]]) -> None:
+    """批量写入多个图片的标签（一次 load + 一次 save）。
+
+    比逐个调用 add_image_tags 快 N 倍：N 次磁盘 IO → 2 次磁盘 IO。
+    幂等：同一 image_id 重复添加同一 tag 不会重复（先移除再加）。
+    并发安全：用 tag_index_lock 保护"读-改-写"整体。
+
+    items: [(image_id, tags), ...]
+    """
+    if not items:
+        return
+    with tag_index_lock:
+        index = load_tag_index()
+        for image_id, tags in items:
+            if not tags:
+                continue
+            for tag in tags:
+                tag = tag.strip()
+                if not tag:
+                    continue
+                bucket = index.setdefault(tag, [])
+                # 幂等：先移除再加，避免重复
+                if image_id in bucket:
+                    bucket.remove(image_id)
+                bucket.append(image_id)
+        save_tag_index(index)
+    logger.debug("批量标签索引写入: %d 张图片", len(items))
+
+
+def batch_remove_image_tags(image_ids: list[str]) -> None:
+    """批量从所有 tag 的倒排列表中移除多个 image_id（一次 load + 一次 save）。
+
+    比逐个调用 remove_image_tags 快 N 倍。
+    并发安全：用 tag_index_lock 保护"读-改-写"整体。
+    """
+    if not image_ids:
+        return
+    id_set = set(image_ids)
+    with tag_index_lock:
+        index = load_tag_index()
+        removed = False
+        for tag in list(index.keys()):
+            new_bucket = [iid for iid in index[tag] if iid not in id_set]
+            if len(new_bucket) != len(index[tag]):
+                removed = True
+                if new_bucket:
+                    index[tag] = new_bucket
+                else:
+                    del index[tag]
+        if removed:
+            save_tag_index(index)
+    logger.debug("批量标签索引清理: %d 张图片", len(image_ids))
+
+
 def remove_image_tags(image_id: str) -> None:
     """删除图片时调用：从所有 tag 的倒排列表中移除该 image_id。
 
