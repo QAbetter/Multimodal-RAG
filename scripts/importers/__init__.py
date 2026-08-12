@@ -16,6 +16,7 @@
 """
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -28,6 +29,33 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 # 导入状态文件路径（记录每个博物馆 xlsx 的 mtime，用于增量导入判断）
 STATE_FILE = Path("data/processed/import_state.json")
+
+
+def clean_filename(filename: str) -> str:
+    """清洗文件名：去首尾空格 + 合并连续点号为单个点。
+
+    修复 RAGFlow 静态文件服务无法访问含首尾空格、连续点号（如 "....jpeg"）的 URL 问题。
+    例如：
+      " 元龙泉窑粉青釉划花....jpeg" → "元龙泉窑粉青釉划花.jpeg"
+      "  明代青花瓷瓶.jpeg  " → "明代青花瓷瓶.jpeg"
+      "test...jpg" → "test.jpg"
+
+    Args:
+        filename: 原始文件名（可能含空格、连续点号）
+
+    Returns:
+        清洗后的文件名；输入为空或仅点号时返回 "unknown_file"
+    """
+    if not filename:
+        return filename
+    # 1. 去首尾空格（URL 中 %20 导致静态服务 404）
+    cleaned = filename.strip()
+    # 2. 合并连续点号（如 "....jpeg" → ".jpeg"，"test...jpg" → "test.jpg"）
+    cleaned = re.sub(r'\.{2,}', '.', cleaned)
+    # 3. 处理只剩点号或空字符串的极端情况
+    if not cleaned or cleaned == '.':
+        return 'unknown_file'
+    return cleaned
 
 
 def extract_ware_type(name: str) -> str | None:
@@ -142,6 +170,12 @@ def simple_import_museum(
     xlsx_path = src_dir / xlsx_filename
     df = pd.read_excel(xlsx_path)
 
+    # 预建文件名到路径的索引，避免逐行 rglob（O(N) 而非 O(N×M)）
+    name_to_path: dict[str, Path] = {}
+    for f in src_dir.rglob("*"):
+        if f.is_file() and f.suffix.lower() in IMAGE_EXTS:
+            name_to_path[f.name] = f
+
     # 确定 name_col
     if name_col and name_col in df.columns:
         title_col = name_col
@@ -217,16 +251,15 @@ def simple_import_museum(
         if img_filename:
             metadata[product_id]["source_file"] = img_filename
 
-        # rglob 查找图片
+        # 用预建索引查找图片（O(1)，避免逐行 rglob）
         has_img = False
         if img_filename:
-            try:
-                matched = list(src_dir.rglob(img_filename))
-            except OSError:
-                matched = []  # 文件名过长等异常，跳过
+            matched = [name_to_path[img_filename]] if img_filename in name_to_path else []
             if matched:
                 src_img = matched[0]
-                dst_img = dst_raw / museum_name / product_id / src_img.name
+                # 清洗目标文件名，避免首尾空格/连续点号导致静态服务 404
+                dst_name = clean_filename(src_img.name)
+                dst_img = dst_raw / museum_name / product_id / dst_name
                 total += 1
                 if not dry_run:
                     if copy_image_if_changed(src_img, dst_img):
@@ -336,7 +369,9 @@ def info_3d_import_museum(
                 img_name = Path(img_rel.replace("\\", "/")).name
                 src_img = name_to_path.get(img_name)
                 if src_img:
-                    dst_img = dst_raw / museum_name / product_id / src_img.name
+                    # 清洗目标文件名，避免首尾空格/连续点号导致静态服务 404
+                    dst_name = clean_filename(src_img.name)
+                    dst_img = dst_raw / museum_name / product_id / dst_name
                     total += 1
                     if not dry_run:
                         if copy_image_if_changed(src_img, dst_img):
@@ -593,7 +628,9 @@ def xlsx_name_import_museum(
                     matched = []  # 文件名过长等异常，跳过
                 if matched:
                     src_img = matched[0]
-                    dst_img = dst_raw / museum_name / product_id / src_img.name
+                    # 清洗目标文件名，避免首尾空格/连续点号导致静态服务 404
+                    dst_name = clean_filename(src_img.name)
+                    dst_img = dst_raw / museum_name / product_id / dst_name
                     total += 1
                     if not dry_run:
                         if copy_image_if_changed(src_img, dst_img):
@@ -677,7 +714,9 @@ def category_subdir_import_museum(
         )
         metadata[product_id]["source_file"] = img.name
 
-        dst_img = dst_raw / museum_name / product_id / img.name
+        # 清洗目标文件名，避免首尾空格/连续点号导致静态服务 404
+        dst_name = clean_filename(img.name)
+        dst_img = dst_raw / museum_name / product_id / dst_name
         total += 1
         if not dry_run:
             if copy_image_if_changed(img, dst_img):
